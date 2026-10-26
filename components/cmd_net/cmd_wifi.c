@@ -10,33 +10,10 @@
 #include "esp_wifi.h"
 #include "soc/soc_caps.h"
 #include "shell.h"
-#include "net_priv.h"
+#include "net.h"
+#include "cmd_net_priv.h"
 
 static const char *TAG = "cmd_wifi";
-
-static const char *band_str(uint8_t channel)
-{
-    return channel > 14 ? "5" : "2.4";
-}
-
-static const char *auth_str(wifi_auth_mode_t mode)
-{
-    switch (mode) {
-    case WIFI_AUTH_OPEN: return "open";
-    case WIFI_AUTH_WEP: return "wep";
-    case WIFI_AUTH_WPA_PSK: return "wpa";
-    case WIFI_AUTH_WPA2_PSK: return "wpa2";
-    case WIFI_AUTH_WPA_WPA2_PSK: return "wpa/wpa2";
-    case WIFI_AUTH_WPA3_PSK: return "wpa3";
-    case WIFI_AUTH_WPA2_WPA3_PSK: return "wpa2/wpa3";
-    case WIFI_AUTH_OWE: return "owe";
-    case WIFI_AUTH_WAPI_PSK: return "wapi";
-    case WIFI_AUTH_ENTERPRISE:
-    case WIFI_AUTH_WPA3_ENTERPRISE:
-    case WIFI_AUTH_WPA2_WPA3_ENTERPRISE: return "enterprise";
-    default: return "other";
-    }
-}
 
 static int cmd_scan(int argc, char **argv)
 {
@@ -60,7 +37,7 @@ static int cmd_scan(int argc, char **argv)
         const wifi_ap_record_t *ap = &aps[i];
         printf("%-32.32s " MACSTR " %3d %4s %4d %s\n",
                ap->ssid[0] ? (const char *)ap->ssid : "<hidden>", MAC2STR(ap->bssid),
-               ap->primary, band_str(ap->primary), ap->rssi, auth_str(ap->authmode));
+               ap->primary, net_band_str(ap->primary), ap->rssi, net_auth_str(ap->authmode));
     }
     free(aps);
     return 0;
@@ -105,7 +82,7 @@ static int cmd_connect(int argc, char **argv)
     if (!shell_args_ok(argc, argv, &s_connect_args)) {
         return 1;
     }
-    int timeout_s = s_connect_args.timeout->count ? s_connect_args.timeout->ival[0] : 15;
+    int timeout_s = s_connect_args.timeout->count ? s_connect_args.timeout->ival[0] : 30;
     const char *ssid = s_connect_args.ssid->sval[0];
     const char *password = s_connect_args.password->count ? s_connect_args.password->sval[0] : NULL;
 
@@ -139,6 +116,10 @@ static int cmd_connect(int argc, char **argv)
             return 1;
         }
         if (esp_timer_get_time() > deadline) {
+            if (net_associated()) {
+                fprintf(stderr, "connect: associated but no IP after %d s, still trying; see 'wifi status'\n", timeout_s);
+                return 1;
+            }
             uint8_t reason = net_last_reason();
             net_disconnect();
             fprintf(stderr, "connect: timeout after %d s", timeout_s);
@@ -175,9 +156,9 @@ static int cmd_status(int argc, char **argv)
     if (associated) {
         printf("ssid       %s\n", (const char *)ap.ssid);
         printf("bssid      " MACSTR "\n", MAC2STR(ap.bssid));
-        printf("channel    %d (%s GHz)\n", ap.primary, band_str(ap.primary));
+        printf("channel    %d (%s GHz)\n", ap.primary, net_band_str(ap.primary));
         printf("rssi       %d dBm\n", ap.rssi);
-        printf("auth       %s\n", auth_str(ap.authmode));
+        printf("auth       %s\n", net_auth_str(ap.authmode));
     }
     if (net_has_ip()) {
         esp_netif_ip_info_t ip;
@@ -211,7 +192,7 @@ static int cmd_wifi(int argc, char **argv)
 
 esp_err_t cmd_wifi_register(void)
 {
-    s_connect_args.timeout = arg_int0("t", "timeout", "<sec>", "wait for IP, default 15");
+    s_connect_args.timeout = arg_int0("t", "timeout", "<sec>", "wait for IP, default 30");
 #if SOC_WIFI_SUPPORT_5G
     s_connect_args.band = arg_str0("b", "band", "<2.4|5|auto>", "radio band, default auto");
 #endif

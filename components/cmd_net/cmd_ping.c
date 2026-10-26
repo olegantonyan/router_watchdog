@@ -10,7 +10,8 @@
 #include "lwip/netdb.h"
 #include "ping/ping_sock.h"
 #include "shell.h"
-#include "net_priv.h"
+#include "net.h"
+#include "cmd_net_priv.h"
 
 static const char *TAG = "cmd_ping";
 

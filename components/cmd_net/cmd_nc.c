@@ -14,7 +14,8 @@
 #include "lwip/netdb.h"
 #include "lwip/sockets.h"
 #include "shell.h"
-#include "net_priv.h"
+#include "net.h"
+#include "cmd_net_priv.h"
 
 #define NC_CONNECT_TIMEOUT_S 10
 #define NC_TICK_MS 100
