@@ -183,6 +183,7 @@ esp_err_t web_start(void)
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
         ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server, &uris[i]), TAG, "register %s", uris[i].uri);
     }
+    esp_log_level_set("httpd_txrx", ESP_LOG_ERROR);
     ESP_LOGI(TAG, "listening on port %d", cfg.server_port);
     return ESP_OK;
 }

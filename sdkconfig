@@ -1307,10 +1307,17 @@ CONFIG_ESP_ERR_TO_NAME_LOOKUP=y
 # end of Common ESP-related
 
 #
+# ESP-Driver:BitScrambler Configurations
+#
+# default:
+# CONFIG_BITSCRAMBLER_CTRL_FUNC_IN_IRAM is not set
+# end of ESP-Driver:BitScrambler Configurations
+
+#
 # GDMA Configurations
 #
 # default:
-# CONFIG_GDMA_CTRL_FUNC_IN_IRAM is not set
+CONFIG_GDMA_CTRL_FUNC_IN_IRAM=y
 # default:
 CONFIG_GDMA_ISR_HANDLER_IN_IRAM=y
 # default:
@@ -1325,6 +1332,40 @@ CONFIG_GDMA_OBJ_DRAM_SAFE=y
 # default:
 # CONFIG_GPIO_CTRL_FUNC_IN_IRAM is not set
 # end of ESP-Driver:GPIO Configurations
+
+#
+# ESP-Driver:RMT Configurations
+#
+# default:
+CONFIG_RMT_ENCODER_FUNC_IN_IRAM=y
+# default:
+CONFIG_RMT_TX_ISR_HANDLER_IN_IRAM=y
+# default:
+CONFIG_RMT_RX_ISR_HANDLER_IN_IRAM=y
+# default:
+# CONFIG_RMT_RECV_FUNC_IN_IRAM is not set
+# default:
+# CONFIG_RMT_TX_ISR_CACHE_SAFE is not set
+# default:
+# CONFIG_RMT_RX_ISR_CACHE_SAFE is not set
+# default:
+CONFIG_RMT_OBJ_CACHE_SAFE=y
+# default:
+# CONFIG_RMT_ENABLE_DEBUG_LOG is not set
+# default:
+# CONFIG_RMT_ISR_IRAM_SAFE is not set
+# end of ESP-Driver:RMT Configurations
+
+#
+# ESP-Driver:SPI Configurations
+#
+# default:
+CONFIG_SPI_MASTER_ISR_IN_IRAM=y
+# default:
+# CONFIG_SPI_SLAVE_IN_IRAM is not set
+# default:
+CONFIG_SPI_SLAVE_ISR_IN_IRAM=y
+# end of ESP-Driver:SPI Configurations
 
 #
 # ESP-Driver:UART Configurations
@@ -1550,6 +1591,8 @@ CONFIG_ESP_BROWNOUT_USE_INTR=y
 # end of Brownout Detector
 # end of Power Supplier
 
+# default:
+CONFIG_ESP_SPI_BUS_LOCK_ISR_FUNCS_IN_IRAM=y
 # default:
 CONFIG_ESP_CLK_RC32K_NOT_TO_USE=y
 # default:
@@ -3339,6 +3382,13 @@ CONFIG_VFS_SEMIHOSTFS_MAX_MOUNT_POINTS=1
 # default:
 CONFIG_VFS_INITIALIZE_DEV_NULL=y
 # end of Virtual file system
+
+#
+# Router watchdog LED
+#
+# default:
+CONFIG_RW_LED_GPIO=27
+# end of Router watchdog LED
 
 #
 # Router watchdog

@@ -150,12 +150,12 @@ void net_disconnect(void)
 
 bool net_associated(void)
 {
-    return xEventGroupGetBits(s_events) & NET_ASSOCIATED;
+    return s_events && (xEventGroupGetBits(s_events) & NET_ASSOCIATED);
 }
 
 bool net_has_ip(void)
 {
-    return xEventGroupGetBits(s_events) & NET_GOT_IP;
+    return s_events && (xEventGroupGetBits(s_events) & NET_GOT_IP);
 }
 
 bool net_reconnect_enabled(void)
