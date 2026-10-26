@@ -13,6 +13,7 @@
 #include "freertos/task.h"
 #include "sdkconfig.h"
 #include "soc/soc_caps.h"
+#include "shell.h"
 #include "cmd_system_priv.h"
 
 static const char *TAG = "cmd_sys";
@@ -121,8 +122,7 @@ static struct {
 
 static int cmd_reboot(int argc, char **argv)
 {
-    if (arg_parse(argc, argv, (void **)&s_reboot_args) != 0) {
-        arg_print_errors(stderr, s_reboot_args.end, argv[0]);
+    if (!shell_args_ok(argc, argv, &s_reboot_args)) {
         return 1;
     }
     int delay_ms = s_reboot_args.delay->count ? s_reboot_args.delay->ival[0] : 100;

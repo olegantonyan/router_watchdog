@@ -8,6 +8,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "sdkconfig.h"
+#include "shell.h"
 #include "cmd_system_priv.h"
 
 static const char *TAG = "cmd_mem";
@@ -31,8 +32,7 @@ static const char *fmt_size(char *buf, size_t len, size_t bytes, bool human)
 
 static int cmd_free(int argc, char **argv)
 {
-    if (arg_parse(argc, argv, (void **)&s_free_args) != 0) {
-        arg_print_errors(stderr, s_free_args.end, argv[0]);
+    if (!shell_args_ok(argc, argv, &s_free_args)) {
         return 1;
     }
     bool human = s_free_args.human->count > 0;
