@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <inttypes.h>
+#include <time.h>
 #include "argtable3/argtable3.h"
+#include "clock.h"
 #include "esp_app_desc.h"
 #include "esp_check.h"
 #include "esp_chip_info.h"
@@ -109,6 +111,13 @@ static const char *reset_reason_str(esp_reset_reason_t r)
 static int cmd_uptime(int argc, char **argv)
 {
     int64_t s = esp_timer_get_time() / 1000000;
+    if (clock_is_set()) {
+        time_t now = time(NULL);
+        struct tm tm;
+        char buf[12];
+        strftime(buf, sizeof(buf), "%H:%M:%S ", localtime_r(&now, &tm));
+        printf("%s", buf);
+    }
     printf("up %lld days, %02lld:%02lld:%02lld, reset: %s\n",
            s / 86400, s / 3600 % 24, s / 60 % 60, s % 60,
            reset_reason_str(esp_reset_reason()));

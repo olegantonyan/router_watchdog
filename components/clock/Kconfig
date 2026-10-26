@@ -1,0 +1,17 @@
+menu "Router watchdog clock"
+
+    config RW_TZ
+        string "Timezone (POSIX TZ string)"
+        default "CET-1CEST,M3.5.0,M10.5.0/3"
+        help
+            Default is Central Europe with daylight saving. Change at runtime with the 'tz' command.
+
+    config RW_NTP_SERVER1
+        string "NTP server 1"
+        default "pool.ntp.org"
+
+    config RW_NTP_SERVER2
+        string "NTP server 2"
+        default "time.google.com"
+
+endmenu

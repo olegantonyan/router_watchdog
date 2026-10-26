@@ -2747,8 +2747,7 @@ CONFIG_LWIP_MAX_RAW_PCBS=16
 #
 # SNTP
 #
-# default:
-CONFIG_LWIP_SNTP_MAX_SERVERS=1
+CONFIG_LWIP_SNTP_MAX_SERVERS=3
 # default:
 # CONFIG_LWIP_DHCP_GET_NTP_SRV is not set
 # default:
@@ -3382,6 +3381,17 @@ CONFIG_VFS_SEMIHOSTFS_MAX_MOUNT_POINTS=1
 # default:
 CONFIG_VFS_INITIALIZE_DEV_NULL=y
 # end of Virtual file system
+
+#
+# Router watchdog clock
+#
+# default:
+CONFIG_RW_TZ="CET-1CEST,M3.5.0,M10.5.0/3"
+# default:
+CONFIG_RW_NTP_SERVER1="pool.ntp.org"
+# default:
+CONFIG_RW_NTP_SERVER2="time.google.com"
+# end of Router watchdog clock
 
 #
 # Router watchdog LED

@@ -9,6 +9,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "clock.h"
 #include "net.h"
 #include "web.h"
 
@@ -18,6 +19,8 @@ static const char *TAG = "web";
 
 typedef struct {
     const char *version;
+    char time[32];
+    bool time_synced;
     int64_t uptime_s;
     uint32_t free_heap;
     const char *sta_state;
@@ -38,7 +41,13 @@ static void collect(status_t *s)
         .uptime_s = esp_timer_get_time() / 1000000,
         .free_heap = esp_get_free_heap_size(),
         .ap_ssid = net_ap_ssid(),
+        .time_synced = clock_sync_count() > 0,
     };
+    if (clock_is_set()) {
+        time_t now = time(NULL);
+        struct tm tm;
+        strftime(s->time, sizeof(s->time), "%Y-%m-%dT%H:%M:%S%z", localtime_r(&now, &tm));
+    }
 
     wifi_ap_record_t ap;
     bool associated = net_associated() && esp_wifi_sta_get_ap_info(&ap) == ESP_OK;
@@ -98,6 +107,7 @@ static const char PAGE_FMT[] =
     "</style></head><body><h1>%s</h1>"
     "<h2>Device</h2><table>"
     "<tr><td>Version<td>%s"
+    "<tr><td>Time<td>%s"
     "<tr><td>Uptime<td>%" PRId64 "d %02" PRId64 ":%02" PRId64 ":%02" PRId64
     "<tr><td>Free heap<td>%" PRIu32 " bytes</table>"
     "<h2>Wi-Fi client</h2><table>"
@@ -107,7 +117,7 @@ static const char PAGE_FMT[] =
     "<p><a href=/api/status>JSON</a></body></html>";
 
 static const char JSON_FMT[] =
-    "{\"version\":\"%s\",\"uptime_s\":%" PRId64 ",\"free_heap\":%" PRIu32 ","
+    "{\"version\":\"%s\",\"time\":%s,\"time_synced\":%s,\"uptime_s\":%" PRId64 ",\"free_heap\":%" PRIu32 ","
     "\"sta\":{\"state\":\"%s\",\"ssid\":\"%s\",\"ip\":\"%s\",\"rssi\":%s},"
     "\"ap\":{\"ssid\":\"%s\",\"ip\":\"%s\",\"channel\":%d,\"clients\":%d}}\n";
 
@@ -137,9 +147,15 @@ static int render_html(char *buf, size_t len, const status_t *s)
     } else {
         strcpy(rssi, "-");
     }
+    char time[48];
+    if (s->time[0]) {
+        snprintf(time, sizeof(time), "%s%s", s->time, s->time_synced ? "" : " (not synced)");
+    } else {
+        strcpy(time, "not set");
+    }
     int64_t t = s->uptime_s;
     return snprintf(buf, len, PAGE_FMT, ap_ssid, ap_ssid,
-                    s->version, t / 86400, t / 3600 % 24, t / 60 % 60, t % 60, s->free_heap,
+                    s->version, time, t / 86400, t / 3600 % 24, t / 60 % 60, t % 60, s->free_heap,
                     s->sta_state, sta_ssid[0] ? sta_ssid : "-", s->sta_ip[0] ? s->sta_ip : "-", rssi,
                     ap_ssid, s->ap_ip, s->channel, s->ap_clients);
 }
@@ -154,7 +170,13 @@ static int render_json(char *buf, size_t len, const status_t *s)
     } else {
         strcpy(rssi, "null");
     }
-    return snprintf(buf, len, JSON_FMT, s->version, s->uptime_s, s->free_heap,
+    char time[40];
+    if (s->time[0]) {
+        snprintf(time, sizeof(time), "\"%s\"", s->time);
+    } else {
+        strcpy(time, "null");
+    }
+    return snprintf(buf, len, JSON_FMT, s->version, time, s->time_synced ? "true" : "false", s->uptime_s, s->free_heap,
                     s->sta_state, sta_ssid, s->sta_ip, rssi,
                     ap_ssid, s->ap_ip, s->channel, s->ap_clients);
 }

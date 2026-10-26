@@ -3,6 +3,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "esp_system.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
@@ -75,6 +76,12 @@ static esp_err_t ap_configure(void)
     return esp_wifi_set_config(WIFI_IF_AP, &cfg);
 }
 
+static void on_shutdown(void)
+{
+    s_reconnect = false;
+    s_leaving = true;
+}
+
 esp_err_t net_init(void)
 {
     s_events = xEventGroupCreate();
@@ -99,6 +106,7 @@ esp_err_t net_init(void)
     ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "wifi start");
 
     esp_log_level_set("wifi", ESP_LOG_ERROR);
+    ESP_RETURN_ON_ERROR(esp_register_shutdown_handler(on_shutdown), TAG, "shutdown handler");
 
     esp_netif_ip_info_t ip;
     esp_netif_get_ip_info(s_ap, &ip);

@@ -40,6 +40,17 @@ The DevKitC-1 addressable LED (GPIO27, `idf.py menuconfig` → Router watchdog L
 
 `led color|blink|breathe|rainbow|off` switch to manual mode; `led auto` returns to status mode. Settings are RAM-only.
 
+## Clock
+
+System time is kept in software by ESP-IDF (RTC timer), survives every reset except power loss, and is synced over NTP once the Wi-Fi client has an IP, then hourly.
+
+| Setting | Default (`idf.py menuconfig` → Router watchdog clock) |
+|---|---|
+| Timezone | `CET-1CEST,M3.5.0,M10.5.0/3` (Central Europe, auto DST) |
+| NTP servers | `pool.ntp.org`, `time.google.com` (slot 3 free) |
+
+`tz` and `ntp server` changes are RAM-only.
+
 ## Shell
 
 Built on ESP-IDF `esp_console`: line editing, history, Tab completion, getopt-style args via argtable3, `help [cmd]`. Long-running commands stop on Ctrl+C.
@@ -48,7 +59,13 @@ Built on ESP-IDF `esp_console`: line editing, history, Tab completion, getopt-st
 |---|---|
 | `sysinfo` | chip, revision, cores, features, flash, MAC addresses |
 | `version` | app version, ESP-IDF version, build time, ELF SHA |
-| `uptime` | time since boot, last reset reason |
+| `uptime` | local time (once set), time since boot, last reset reason |
+| `date [-u] [+format]` | local time, UTC, or strftime format (`date +%Y-%m-%dT%H:%M:%S%z`) |
+| `date -s "YYYY-MM-DD HH:MM[:SS]"` | set local time manually |
+| `tz [-l] [<zone>]` | show timezone, list named zones, or set by name (`Europe/London`) or POSIX string |
+| `ntp status` | sync count, last sync, interval, servers and reachability |
+| `ntp sync [-t sec]` | sync now and wait |
+| `ntp server <1-3> <host\|none>` | replace or clear a server |
 | `reboot [-d ms]` | restart the chip |
 | `free [-h]` | heap per memory region |
 | `ps` | FreeRTOS tasks: state, priority, core, stack high-water mark, CPU % since boot |
@@ -73,7 +90,9 @@ Built on ESP-IDF `esp_console`: line editing, history, Tab completion, getopt-st
 ## Layout
 
 ```
-main/main.c              NVS → led_init → net_init → shell_init → register command groups → web_start → shell_start
+main/main.c              NVS → led_init → net_init → clock_init → shell_init → register command groups → web_start → shell_start
+components/clock/        timezone + SNTP (esp_netif_sntp), sync tracking
+components/cmd_clock/    date, tz, ntp
 main/status_led.c        network state → LED pattern (auto mode)
 components/led/          RGB LED driver (espressif/led_strip over RMT), effects, color presets
 components/cmd_led/      led
