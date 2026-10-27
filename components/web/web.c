@@ -10,6 +10,7 @@
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "clock.h"
+#include "inet.h"
 #include "net.h"
 #include "web.h"
 
@@ -24,6 +25,7 @@ typedef struct {
     int64_t uptime_s;
     uint32_t free_heap;
     const char *sta_state;
+    const char *internet;
     char sta_ssid[33];
     char sta_ip[16];
     bool sta_has_rssi;
@@ -42,6 +44,7 @@ static void collect(status_t *s)
         .free_heap = esp_get_free_heap_size(),
         .ap_ssid = net_ap_ssid(),
         .time_synced = clock_sync_count() > 0,
+        .internet = inet_state_str(inet_state()),
     };
     if (clock_is_set()) {
         time_t now = time(NULL);
@@ -111,14 +114,14 @@ static const char PAGE_FMT[] =
     "<tr><td>Uptime<td>%" PRId64 "d %02" PRId64 ":%02" PRId64 ":%02" PRId64
     "<tr><td>Free heap<td>%" PRIu32 " bytes</table>"
     "<h2>Wi-Fi client</h2><table>"
-    "<tr><td>State<td>%s<tr><td>Network<td>%s<tr><td>IP<td>%s<tr><td>Signal<td>%s</table>"
+    "<tr><td>State<td>%s<tr><td>Internet<td>%s<tr><td>Network<td>%s<tr><td>IP<td>%s<tr><td>Signal<td>%s</table>"
     "<h2>Access point</h2><table>"
     "<tr><td>SSID<td>%s<tr><td>IP<td>%s<tr><td>Channel<td>%d<tr><td>Clients<td>%d</table>"
     "<p><a href=/api/status>JSON</a></body></html>";
 
 static const char JSON_FMT[] =
     "{\"version\":\"%s\",\"time\":%s,\"time_synced\":%s,\"uptime_s\":%" PRId64 ",\"free_heap\":%" PRIu32 ","
-    "\"sta\":{\"state\":\"%s\",\"ssid\":\"%s\",\"ip\":\"%s\",\"rssi\":%s},"
+    "\"internet\":\"%s\",\"sta\":{\"state\":\"%s\",\"ssid\":\"%s\",\"ip\":\"%s\",\"rssi\":%s},"
     "\"ap\":{\"ssid\":\"%s\",\"ip\":\"%s\",\"channel\":%d,\"clients\":%d}}\n";
 
 static esp_err_t send_formatted(httpd_req_t *req, const char *type, int (*render)(char *, size_t, const status_t *))
@@ -156,7 +159,7 @@ static int render_html(char *buf, size_t len, const status_t *s)
     int64_t t = s->uptime_s;
     return snprintf(buf, len, PAGE_FMT, ap_ssid, ap_ssid,
                     s->version, time, t / 86400, t / 3600 % 24, t / 60 % 60, t % 60, s->free_heap,
-                    s->sta_state, sta_ssid[0] ? sta_ssid : "-", s->sta_ip[0] ? s->sta_ip : "-", rssi,
+                    s->sta_state, s->internet, sta_ssid[0] ? sta_ssid : "-", s->sta_ip[0] ? s->sta_ip : "-", rssi,
                     ap_ssid, s->ap_ip, s->channel, s->ap_clients);
 }
 
@@ -177,7 +180,7 @@ static int render_json(char *buf, size_t len, const status_t *s)
         strcpy(time, "null");
     }
     return snprintf(buf, len, JSON_FMT, s->version, time, s->time_synced ? "true" : "false", s->uptime_s, s->free_heap,
-                    s->sta_state, sta_ssid, s->sta_ip, rssi,
+                    s->internet, s->sta_state, sta_ssid, s->sta_ip, rssi,
                     ap_ssid, s->ap_ip, s->channel, s->ap_clients);
 }
 

@@ -10,5 +10,6 @@ esp_err_t cmd_net_register(void)
     ESP_RETURN_ON_ERROR(cmd_ap_register(), TAG, "ap commands");
     ESP_RETURN_ON_ERROR(cmd_ping_register(), TAG, "ping command");
     ESP_RETURN_ON_ERROR(cmd_nc_register(), TAG, "nc command");
+    ESP_RETURN_ON_ERROR(cmd_inet_register(), TAG, "inet command");
     return ESP_OK;
 }

@@ -1,0 +1,15 @@
+menu "Router watchdog internet check"
+
+    config RW_INET_INTERVAL
+        int "Check interval while online (s)"
+        range 10 3600
+        default 30
+
+    config RW_INET_FAIL_ROUNDS
+        int "Failed rounds before going offline"
+        range 1 10
+        default 2
+        help
+            Consecutive failed rounds needed to switch from online to offline when public pings still pass. A total outage switches after one round. Failed rounds repeat every 10 s.
+
+endmenu

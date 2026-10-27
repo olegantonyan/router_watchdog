@@ -2,6 +2,7 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "clock.h"
+#include "inet.h"
 #include "led.h"
 #include "net.h"
 #include "web.h"
@@ -35,6 +36,9 @@ void app_main(void)
     ESP_ERROR_CHECK(net_init());
     if (clock_init() != ESP_OK) {
         ESP_LOGE(TAG, "ntp failed to start, continuing without it");
+    }
+    if (inet_start() != ESP_OK) {
+        ESP_LOGE(TAG, "internet check failed to start, continuing without it");
     }
     ESP_ERROR_CHECK(shell_init());
     ESP_ERROR_CHECK(cmd_system_register());

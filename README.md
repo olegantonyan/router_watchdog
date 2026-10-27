@@ -25,12 +25,25 @@ On boot the board starts an access point, alongside the Wi-Fi client:
 Change them in `idf.py menuconfig` → Router watchdog.
 
 Web server (no auth, port 80, reachable on the AP and on the client network):
-- `http://192.168.4.1/` — status page, refreshes every 5 s
+- `http://192.168.4.1/` — status page (device, internet, Wi-Fi client, access point), refreshes every 5 s
 - `http://192.168.4.1/api/status` — same data as JSON
 
 ## Wi-Fi client
 
 A `wifi connect` that gets an IP saves SSID, password and band to NVS (namespace `wifi`, unencrypted); the board joins that network on every boot. `wifi disconnect` keeps it saved, `wifi forget` erases it. Reconnects back off after 3 quick retries: 5, 10, 20, 40, then every 60 s.
+
+## Internet check
+
+While the Wi-Fi client has an IP, a background task runs a round of probes right away and then every 30 s:
+
+| Probe | Pass |
+|---|---|
+| ping gateway, 1.1.1.1, 8.8.8.8 | any of 3 replies |
+| `http://connectivitycheck.gstatic.com/generate_204`, `http://cp.cloudflare.com/generate_204` | status 204 |
+| `http://www.msftconnecttest.com/connecttest.txt` | 200, `Microsoft Connect Test` |
+| `http://captive.apple.com/hotspot-detect.html` | 200, `Success` |
+
+Online = any HTTP probe passes (redirects fail, so a captive portal can't fake it); pings are diagnostics for the offline reason (`gateway unreachable`, `public IPs unreachable`, `dns failing`, `http checks failing`). Probes run in parallel, so a round takes as long as its slowest probe (~20 s worst case, when DNS times out). A total outage (no public ping, no HTTP) turns offline after one round; a partial one (pings pass, HTTP fails) needs 2 failed rounds in a row. Failed rounds repeat every 10 s. Interval and threshold: `idf.py menuconfig` → Router watchdog internet check.
 
 ## RGB LED
 
@@ -38,9 +51,10 @@ The DevKitC-1 addressable LED (GPIO27, `idf.py menuconfig` → Router watchdog L
 
 | State | LED |
 |---|---|
-| Wi-Fi client connected | green, solid |
-| connecting / waiting for IP | yellow, blinking |
-| client idle (access point only) | blue, breathing |
+| internet online | green, solid |
+| Wi-Fi connected, internet offline | red, solid |
+| connecting / waiting for IP / first internet check | orange, blinking |
+| no Wi-Fi (nothing saved or `wifi disconnect`) | orange, solid |
 
 `led color|blink|breathe|rainbow|off` switch to manual mode; `led auto` returns to status mode. Settings are RAM-only.
 
@@ -88,6 +102,8 @@ Built on ESP-IDF `esp_console`: line editing, history, Tab completion, getopt-st
 | `led off` / `led auto` | turn off / back to network status |
 | `led brightness <0-100>` | global brightness, default 20 |
 | `led presets` | list color names and effects |
+| `inet status` | internet state, offline reason, last/next check, per-probe result and time |
+| `inet check [-t sec]` | run all probes now and wait for the result |
 | `ping [-c n] [-i ms] [-s bytes] [-W ms] <host>` | ICMP echo; `-c 0` runs until Ctrl+C |
 | `nc [-uCv] [-w sec] <host> <port>` | TCP/UDP client; type lines, Ctrl+C/Ctrl+D quits |
 | `nc -l [-uCv] <port>` | accept one TCP connection, or receive UDP and reply to the last sender |
@@ -96,17 +112,18 @@ Built on ESP-IDF `esp_console`: line editing, history, Tab completion, getopt-st
 ## Layout
 
 ```
-main/main.c              NVS → led_init → net_init (joins saved network) → clock_init → shell_init → register command groups → web_start → shell_start
+main/main.c              NVS → led_init → net_init (joins saved network) → clock_init → inet_start → shell_init → register command groups → web_start → shell_start
 components/clock/        timezone + SNTP (esp_netif_sntp), sync tracking
 components/cmd_clock/    date, tz, ntp
 main/status_led.c        network state → LED pattern (auto mode)
 components/led/          RGB LED driver (espressif/led_strip over RMT), effects, color presets
 components/cmd_led/      led
 components/net/          Wi-Fi core: client + access point, saved network (NVS), reconnect backoff, Kconfig defaults
+components/inet/         internet check task: ping + HTTP probes, online/offline state
 components/web/          HTTP server: / and /api/status
 components/shell/        REPL setup + helpers: shell_args_ok, shell_subcmd_run, shell_getc
 components/cmd_system/   sysinfo, version, uptime, reboot, free, ps
-components/cmd_net/      wifi, ap, ping, nc
+components/cmd_net/      wifi, ap, inet, ping, nc
 ```
 
 ## Adding commands
