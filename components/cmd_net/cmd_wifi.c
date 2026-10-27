@@ -48,6 +48,7 @@ static struct {
 #if SOC_WIFI_SUPPORT_5G
     struct arg_str *band;
 #endif
+    struct arg_lit *nosave;
     struct arg_str *ssid;
     struct arg_str *password;
     struct arg_end *end;
@@ -67,6 +68,15 @@ static bool parse_band(const char *s, wifi_band_mode_t *out)
     }
     return true;
 }
+
+static const char *band_name(wifi_band_mode_t band)
+{
+    switch (band) {
+    case WIFI_BAND_MODE_2G_ONLY: return "2.4";
+    case WIFI_BAND_MODE_5G_ONLY: return "5";
+    default: return "auto";
+    }
+}
 #endif
 
 static void print_ip(void)
@@ -83,24 +93,25 @@ static int cmd_connect(int argc, char **argv)
         return 1;
     }
     int timeout_s = s_connect_args.timeout->count ? s_connect_args.timeout->ival[0] : 30;
-    const char *ssid = s_connect_args.ssid->sval[0];
-    const char *password = s_connect_args.password->count ? s_connect_args.password->sval[0] : NULL;
-
-    net_disconnect();
-    esp_err_t err;
+    bool use_saved = !s_connect_args.ssid->count;
+    net_saved_t saved;
+    if (use_saved && net_saved(&saved) != ESP_OK) {
+        fprintf(stderr, "connect: no saved network, give an ssid\n");
+        return 1;
+    }
+    const char *ssid = use_saved ? saved.ssid : s_connect_args.ssid->sval[0];
+    const char *password = use_saved ? (saved.password[0] ? saved.password : NULL)
+                           : s_connect_args.password->count ? s_connect_args.password->sval[0] : NULL;
+    wifi_band_mode_t band = use_saved ? saved.band : WIFI_BAND_MODE_AUTO;
 #if SOC_WIFI_SUPPORT_5G
-    wifi_band_mode_t band = WIFI_BAND_MODE_AUTO;
     if (s_connect_args.band->count && !parse_band(s_connect_args.band->sval[0], &band)) {
         fprintf(stderr, "connect: band must be 2.4, 5 or auto\n");
         return 1;
     }
-    err = esp_wifi_set_band_mode(band);
-    if (err != ESP_OK) {
-        fprintf(stderr, "connect: set band: %s\n", esp_err_to_name(err));
-        return 1;
-    }
 #endif
-    err = net_connect(ssid, password);
+
+    net_disconnect();
+    esp_err_t err = net_connect(ssid, password, band, !use_saved && !s_connect_args.nosave->count);
     if (err != ESP_OK) {
         fprintf(stderr, "connect: %s\n", esp_err_to_name(err));
         net_disconnect();
@@ -140,6 +151,46 @@ static int cmd_disconnect(int argc, char **argv)
     return 0;
 }
 
+static struct {
+    struct arg_lit *password;
+    struct arg_end *end;
+} s_saved_args;
+
+static int cmd_saved(int argc, char **argv)
+{
+    if (!shell_args_ok(argc, argv, &s_saved_args)) {
+        return 1;
+    }
+    net_saved_t saved;
+    if (net_saved(&saved) != ESP_OK) {
+        printf("no saved network\n");
+        return 0;
+    }
+    printf("ssid       %s\n", saved.ssid);
+    printf("password   %s\n", !saved.password[0] ? "none" : s_saved_args.password->count ? saved.password : "********");
+#if SOC_WIFI_SUPPORT_5G
+    printf("band       %s\n", band_name(saved.band));
+#endif
+    printf("on boot    connects automatically\n");
+    return 0;
+}
+
+static int cmd_forget(int argc, char **argv)
+{
+    net_saved_t saved;
+    if (net_saved(&saved) != ESP_OK) {
+        printf("no saved network\n");
+        return 0;
+    }
+    esp_err_t err = net_forget();
+    if (err != ESP_OK) {
+        fprintf(stderr, "forget: %s\n", esp_err_to_name(err));
+        return 1;
+    }
+    printf("forgot '%s'\n", saved.ssid);
+    return 0;
+}
+
 static int cmd_status(int argc, char **argv)
 {
     wifi_ap_record_t ap;
@@ -175,14 +226,18 @@ static int cmd_status(int argc, char **argv)
     if (!associated && reason) {
         printf("last error %s (%d)\n", net_reason_str(reason), reason);
     }
+    net_saved_t saved;
+    printf("saved      %s\n", net_saved(&saved) == ESP_OK ? saved.ssid : "none");
     return 0;
 }
 
 static const shell_subcmd_t s_subcmds[] = {
     { .name = "scan", .help = "List nearby networks", .func = cmd_scan },
-    { .name = "connect", .help = "Join a network (RAM only, not saved)", .func = cmd_connect, .argtable = &s_connect_args },
-    { .name = "disconnect", .help = "Leave the network and stop reconnecting", .func = cmd_disconnect },
+    { .name = "connect", .help = "Join a network; saved once it gets an IP, no ssid = saved network", .func = cmd_connect, .argtable = &s_connect_args },
+    { .name = "disconnect", .help = "Leave the network and stop reconnecting; saved network is kept", .func = cmd_disconnect },
     { .name = "status", .help = "Connection state, signal and IP config", .func = cmd_status },
+    { .name = "saved", .help = "Show the saved network, joined on boot", .func = cmd_saved, .argtable = &s_saved_args },
+    { .name = "forget", .help = "Erase the saved network; current connection stays up", .func = cmd_forget },
 };
 
 static int cmd_wifi(int argc, char **argv)
@@ -196,13 +251,16 @@ esp_err_t cmd_wifi_register(void)
 #if SOC_WIFI_SUPPORT_5G
     s_connect_args.band = arg_str0("b", "band", "<2.4|5|auto>", "radio band, default auto");
 #endif
-    s_connect_args.ssid = arg_str1(NULL, NULL, "<ssid>", "network name");
+    s_connect_args.nosave = arg_lit0("n", "no-save", "don't save the network");
+    s_connect_args.ssid = arg_str0(NULL, NULL, "<ssid>", "network name, default the saved one");
     s_connect_args.password = arg_str0(NULL, NULL, "<password>", "omit for open networks");
     s_connect_args.end = arg_end(4);
+    s_saved_args.password = arg_lit0("p", "password", "show the password");
+    s_saved_args.end = arg_end(1);
 
     const esp_console_cmd_t cmd = {
         .command = "wifi",
-        .help = "Wi-Fi client: scan | connect | disconnect | status",
+        .help = "Wi-Fi client: scan | connect | disconnect | status | saved | forget",
         .hint = "<command> [args]",
         .func = cmd_wifi,
     };

@@ -28,6 +28,10 @@ Web server (no auth, port 80, reachable on the AP and on the client network):
 - `http://192.168.4.1/` — status page, refreshes every 5 s
 - `http://192.168.4.1/api/status` — same data as JSON
 
+## Wi-Fi client
+
+A `wifi connect` that gets an IP saves SSID, password and band to NVS (namespace `wifi`, unencrypted); the board joins that network on every boot. `wifi disconnect` keeps it saved, `wifi forget` erases it. Reconnects back off after 3 quick retries: 5, 10, 20, 40, then every 60 s.
+
 ## RGB LED
 
 The DevKitC-1 addressable LED (GPIO27, `idf.py menuconfig` → Router watchdog LED) shows network status by default:
@@ -70,9 +74,11 @@ Built on ESP-IDF `esp_console`: line editing, history, Tab completion, getopt-st
 | `free [-h]` | heap per memory region |
 | `ps` | FreeRTOS tasks: state, priority, core, stack high-water mark, CPU % since boot |
 | `wifi scan` | nearby networks: SSID, BSSID, channel, band, RSSI, auth |
-| `wifi connect [-t sec] [-b 2.4\|5\|auto] <ssid> [<password>]` | join a network (DHCP); kept in RAM only, auto-reconnects until `wifi disconnect` |
-| `wifi disconnect` | leave and stop reconnecting |
-| `wifi status` | state, signal, IP, gateway, DNS, last error |
+| `wifi connect [-t sec] [-b 2.4\|5\|auto] [-n] [<ssid> [<password>]]` | join a network (DHCP), saved once it gets an IP (`-n`: don't save); no ssid joins the saved one; auto-reconnects until `wifi disconnect` |
+| `wifi disconnect` | leave and stop reconnecting; saved network is kept |
+| `wifi status` | state, signal, IP, gateway, DNS, last error, saved network |
+| `wifi saved [-p]` | saved network: ssid, password (masked, `-p` shows it), band |
+| `wifi forget` | erase the saved network; current connection stays up |
 | `ap status` | AP SSID, password, auth, channel, clients, IP, DHCP range, web URL |
 | `ap clients` | connected clients: MAC, IP, RSSI |
 | `led status` | mode, effect, color, period, brightness |
@@ -90,13 +96,13 @@ Built on ESP-IDF `esp_console`: line editing, history, Tab completion, getopt-st
 ## Layout
 
 ```
-main/main.c              NVS → led_init → net_init → clock_init → shell_init → register command groups → web_start → shell_start
+main/main.c              NVS → led_init → net_init (joins saved network) → clock_init → shell_init → register command groups → web_start → shell_start
 components/clock/        timezone + SNTP (esp_netif_sntp), sync tracking
 components/cmd_clock/    date, tz, ntp
 main/status_led.c        network state → LED pattern (auto mode)
 components/led/          RGB LED driver (espressif/led_strip over RMT), effects, color presets
 components/cmd_led/      led
-components/net/          Wi-Fi core: client + access point, Kconfig defaults
+components/net/          Wi-Fi core: client + access point, saved network (NVS), reconnect backoff, Kconfig defaults
 components/web/          HTTP server: / and /api/status
 components/shell/        REPL setup + helpers: shell_args_ok, shell_subcmd_run, shell_getc
 components/cmd_system/   sysinfo, version, uptime, reboot, free, ps

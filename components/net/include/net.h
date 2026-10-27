@@ -6,11 +6,19 @@
 #include "esp_netif.h"
 #include "esp_wifi_types.h"
 
+typedef struct {
+    char ssid[33];
+    char password[65];
+    wifi_band_mode_t band;
+} net_saved_t;
+
 esp_err_t net_init(void);
 
 esp_netif_t *net_sta(void);
-esp_err_t net_connect(const char *ssid, const char *password);
+esp_err_t net_connect(const char *ssid, const char *password, wifi_band_mode_t band, bool save);
 void net_disconnect(void);
+esp_err_t net_saved(net_saved_t *out);
+esp_err_t net_forget(void);
 bool net_associated(void);
 bool net_has_ip(void);
 bool net_reconnect_enabled(void);
