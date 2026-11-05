@@ -1,0 +1,37 @@
+menu "Router watchdog power cycle"
+
+    config RW_WD_RELAY
+        int "Relay that cuts the router's power"
+        range 1 8
+        default 1
+
+    config RW_WD_PULSE_MS
+        int "Power-off time (ms)"
+        range 500 60000
+        default 3000
+
+    config RW_WD_OFFLINE_S
+        int "Internet offline before power cycling (s)"
+        range 0 3600
+        default 30
+
+    config RW_WD_NO_WIFI_S
+        int "Wi-Fi without IP before power cycling (s), 0 to disable"
+        range 0 86400
+        default 300
+        help
+            Covers a hung router that dropped Wi-Fi, where the internet check can't run. Only counts while a network is saved and not disconnected.
+
+    config RW_WD_GRACE_S
+        int "Wait after a power cycle (s)"
+        range 60 3600
+        default 300
+        help
+            No new power cycle before this; doubles after each cycle that doesn't bring the internet back, resets once it is online.
+
+    config RW_WD_GRACE_MAX_S
+        int "Maximum wait after a power cycle (s)"
+        range 60 86400
+        default 3600
+
+endmenu

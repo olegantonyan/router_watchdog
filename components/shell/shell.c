@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <inttypes.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/select.h>
@@ -88,4 +89,17 @@ int shell_getc(int timeout_ms)
     }
     unsigned char c;
     return read(fd, &c, 1) == 1 ? c : -1;
+}
+
+const char *shell_fmt_duration(char *buf, size_t len, int64_t us)
+{
+    int64_t s = us / 1000000;
+    if (s < 60) {
+        snprintf(buf, len, "%" PRId64 "s", s);
+    } else if (s < 3600) {
+        snprintf(buf, len, "%" PRId64 "m%02" PRId64 "s", s / 60, s % 60);
+    } else {
+        snprintf(buf, len, "%" PRId64 "h%02" PRId64 "m", s / 3600, s / 60 % 60);
+    }
+    return buf;
 }

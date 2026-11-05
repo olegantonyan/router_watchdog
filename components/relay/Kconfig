@@ -1,0 +1,49 @@
+menu "Router watchdog relays"
+
+    config RW_RELAY_ACTIVE_LOW
+        bool "Relays are active low"
+        default n
+        help
+            Enable if a relay switches on when its GPIO is low.
+
+    config RW_RELAY1_GPIO
+        int "Relay 1 GPIO (-1: not connected)"
+        range -1 33
+        default 32
+
+    config RW_RELAY2_GPIO
+        int "Relay 2 GPIO (-1: not connected)"
+        range -1 33
+        default 33
+
+    config RW_RELAY3_GPIO
+        int "Relay 3 GPIO (-1: not connected)"
+        range -1 33
+        default 25
+
+    config RW_RELAY4_GPIO
+        int "Relay 4 GPIO (-1: not connected)"
+        range -1 33
+        default 26
+
+    config RW_RELAY5_GPIO
+        int "Relay 5 GPIO (-1: not connected)"
+        range -1 33
+        default 27
+
+    config RW_RELAY6_GPIO
+        int "Relay 6 GPIO (-1: not connected)"
+        range -1 33
+        default 14
+
+    config RW_RELAY7_GPIO
+        int "Relay 7 GPIO (-1: not connected)"
+        range -1 33
+        default 12
+
+    config RW_RELAY8_GPIO
+        int "Relay 8 GPIO (-1: not connected)"
+        range -1 33
+        default 13
+
+endmenu

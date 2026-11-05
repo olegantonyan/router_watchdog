@@ -12,6 +12,8 @@
 #include "clock.h"
 #include "inet.h"
 #include "net.h"
+#include "shell.h"
+#include "watchdog.h"
 #include "web.h"
 
 #define PAGE_BUF_SIZE 3072
@@ -34,6 +36,12 @@ typedef struct {
     char ap_ip[16];
     uint8_t channel;
     int ap_clients;
+    bool wd_running;
+    bool wd_enabled;
+    char wd_state[64];
+    uint32_t wd_cycles;
+    int64_t wd_last_ago_s;
+    char wd_last_reason[32];
 } status_t;
 
 static void collect(status_t *s)
@@ -75,6 +83,29 @@ static void collect(status_t *s)
     esp_wifi_get_channel(&s->channel, &second);
     wifi_sta_list_t clients;
     s->ap_clients = esp_wifi_ap_get_sta_list(&clients) == ESP_OK ? clients.num : 0;
+
+    watchdog_status_t wd;
+    watchdog_status(&wd);
+    int64_t now = esp_timer_get_time();
+    char d[16], d2[16];
+    s->wd_running = wd.relay != 0;
+    s->wd_enabled = wd.enabled;
+    s->wd_cycles = wd.cycles;
+    s->wd_last_ago_s = wd.cycles ? (now - wd.last_cycle_us) / 1000000 : -1;
+    strlcpy(s->wd_last_reason, wd.last_reason, sizeof(s->wd_last_reason));
+    if (!s->wd_running) {
+        strcpy(s->wd_state, "not running");
+    } else if (wd.cycling) {
+        strcpy(s->wd_state, "power cycling");
+    } else if (!wd.enabled) {
+        strcpy(s->wd_state, "disabled");
+    } else if (wd.holdoff_until_us > now) {
+        snprintf(s->wd_state, sizeof(s->wd_state), "waiting %s after last cycle", shell_fmt_duration(d, sizeof(d), wd.holdoff_until_us - now));
+    } else if (wd.pending) {
+        snprintf(s->wd_state, sizeof(s->wd_state), "%s for %s of %s", wd.pending, shell_fmt_duration(d, sizeof(d), wd.pending_for_us), shell_fmt_duration(d2, sizeof(d2), wd.pending_limit_s * 1000000LL));
+    } else {
+        strcpy(s->wd_state, "armed");
+    }
 }
 
 static const char *escape(char *dst, size_t len, const char *src, bool json)
@@ -117,12 +148,15 @@ static const char PAGE_FMT[] =
     "<tr><td>State<td>%s<tr><td>Internet<td>%s<tr><td>Network<td>%s<tr><td>IP<td>%s<tr><td>Signal<td>%s</table>"
     "<h2>Access point</h2><table>"
     "<tr><td>SSID<td>%s<tr><td>IP<td>%s<tr><td>Channel<td>%d<tr><td>Clients<td>%d</table>"
+    "<h2>Watchdog</h2><table>"
+    "<tr><td>State<td>%s<tr><td>Power cycles<td>%" PRIu32 "<tr><td>Last cycle<td>%s</table>"
     "<p><a href=/api/status>JSON</a></body></html>";
 
 static const char JSON_FMT[] =
     "{\"version\":\"%s\",\"time\":%s,\"time_synced\":%s,\"uptime_s\":%" PRId64 ",\"free_heap\":%" PRIu32 ","
     "\"internet\":\"%s\",\"sta\":{\"state\":\"%s\",\"ssid\":\"%s\",\"ip\":\"%s\",\"rssi\":%s},"
-    "\"ap\":{\"ssid\":\"%s\",\"ip\":\"%s\",\"channel\":%d,\"clients\":%d}}\n";
+    "\"ap\":{\"ssid\":\"%s\",\"ip\":\"%s\",\"channel\":%d,\"clients\":%d},"
+    "\"watchdog\":{\"running\":%s,\"enabled\":%s,\"state\":\"%s\",\"cycles\":%" PRIu32 ",\"last_cycle_ago_s\":%s,\"last_reason\":\"%s\"}}\n";
 
 static esp_err_t send_formatted(httpd_req_t *req, const char *type, int (*render)(char *, size_t, const status_t *))
 {
@@ -156,11 +190,17 @@ static int render_html(char *buf, size_t len, const status_t *s)
     } else {
         strcpy(time, "not set");
     }
+    char last[64] = "-";
+    if (s->wd_last_ago_s >= 0) {
+        char d[16];
+        snprintf(last, sizeof(last), "%s ago (%s)", shell_fmt_duration(d, sizeof(d), s->wd_last_ago_s * 1000000LL), s->wd_last_reason);
+    }
     int64_t t = s->uptime_s;
     return snprintf(buf, len, PAGE_FMT, ap_ssid, ap_ssid,
                     s->version, time, t / 86400, t / 3600 % 24, t / 60 % 60, t % 60, s->free_heap,
                     s->sta_state, s->internet, sta_ssid[0] ? sta_ssid : "-", s->sta_ip[0] ? s->sta_ip : "-", rssi,
-                    ap_ssid, s->ap_ip, s->channel, s->ap_clients);
+                    ap_ssid, s->ap_ip, s->channel, s->ap_clients,
+                    s->wd_state, s->wd_cycles, last);
 }
 
 static int render_json(char *buf, size_t len, const status_t *s)
@@ -179,9 +219,14 @@ static int render_json(char *buf, size_t len, const status_t *s)
     } else {
         strcpy(time, "null");
     }
+    char last_ago[24] = "null";
+    if (s->wd_last_ago_s >= 0) {
+        snprintf(last_ago, sizeof(last_ago), "%" PRId64, s->wd_last_ago_s);
+    }
     return snprintf(buf, len, JSON_FMT, s->version, time, s->time_synced ? "true" : "false", s->uptime_s, s->free_heap,
                     s->internet, s->sta_state, sta_ssid, s->sta_ip, rssi,
-                    ap_ssid, s->ap_ip, s->channel, s->ap_clients);
+                    ap_ssid, s->ap_ip, s->channel, s->ap_clients,
+                    s->wd_running ? "true" : "false", s->wd_enabled ? "true" : "false", s->wd_state, s->wd_cycles, last_ago, s->wd_last_reason);
 }
 
 static esp_err_t handle_index(httpd_req_t *req)

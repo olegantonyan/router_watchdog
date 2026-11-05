@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include "esp_console.h"
 #include "esp_err.h"
 
@@ -21,3 +22,4 @@ esp_err_t shell_start(void);
 bool shell_args_ok(int argc, char **argv, void *argtable);
 int shell_subcmd_run(const char *cmd, const shell_subcmd_t *subs, size_t n, int argc, char **argv);
 int shell_getc(int timeout_ms);
+const char *shell_fmt_duration(char *buf, size_t len, int64_t us);

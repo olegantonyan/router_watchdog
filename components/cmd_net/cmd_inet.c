@@ -12,26 +12,13 @@
 
 static const char *TAG = "cmd_inet";
 
-static const char *fmt_duration(char *buf, size_t len, int64_t us)
-{
-    int64_t s = us / 1000000;
-    if (s < 60) {
-        snprintf(buf, len, "%" PRId64 "s", s);
-    } else if (s < 3600) {
-        snprintf(buf, len, "%" PRId64 "m%02" PRId64 "s", s / 60, s % 60);
-    } else {
-        snprintf(buf, len, "%" PRId64 "h%02" PRId64 "m", s / 3600, s / 60 % 60);
-    }
-    return buf;
-}
-
 static void print_report(const inet_report_t *r)
 {
     int64_t now = esp_timer_get_time();
     char d[16];
     printf("state      %s", inet_state_str(r->state));
     if (r->state != INET_UNKNOWN) {
-        printf(" for %s", fmt_duration(d, sizeof(d), now - r->state_since_us));
+        printf(" for %s", shell_fmt_duration(d, sizeof(d), now - r->state_since_us));
     }
     printf("\n");
     if (r->state == INET_OFFLINE) {
@@ -42,14 +29,14 @@ static void print_report(const inet_report_t *r)
     if (!r->rounds) {
         printf("last check never\n");
     } else {
-        printf("last check %s ago (round %" PRIu32 ")\n", fmt_duration(d, sizeof(d), now - r->last_round_us), r->rounds);
+        printf("last check %s ago (round %" PRIu32 ")\n", shell_fmt_duration(d, sizeof(d), now - r->last_round_us), r->rounds);
     }
     if (r->running) {
         printf("next check running now\n");
     } else if (!net_has_ip()) {
         printf("next check waiting for wifi\n");
     } else if (r->next_round_us) {
-        printf("next check in %s\n", fmt_duration(d, sizeof(d), r->next_round_us > now ? r->next_round_us - now : 0));
+        printf("next check in %s\n", shell_fmt_duration(d, sizeof(d), r->next_round_us > now ? r->next_round_us - now : 0));
     }
     if (!r->count) {
         return;

@@ -1,6 +1,6 @@
 # router_watchdog
 
-ESP32-C5 firmware (ESP-IDF 6.1) with an interactive shell on USB-Serial-JTAG.
+ESP32 firmware (ESP-IDF 6.1) for the ESP32-32E N4 relay board, with an interactive shell on UART0 (115200 8N1).
 
 ## Build & run
 
@@ -9,7 +9,25 @@ make build
 make flash-monitor              # TTY_PORT=/dev/ttyACM0 by default
 ```
 
-Settings live in `sdkconfig.defaults`; `sdkconfig` is generated from it (`rm sdkconfig && idf.py set-target esp32c5` to regenerate).
+Settings live in `sdkconfig.defaults`; `sdkconfig` is generated from it (`rm sdkconfig && idf.py set-target esp32` to regenerate).
+
+### Flashing over USB-UART
+
+Use a 3.3 V logic USB-UART adapter (a 5 V TXD can damage GPIO3).
+
+```
+USB-UART adapter        Board header
+GND  ─────────────────  GND
+TXD  ─────────────────  RX   (GPIO3)
+RXD  ─────────────────  TX   (GPIO1)
+```
+
+Power the board from its own supply and share only GND; adapter 3V3 pins can't supply Wi-Fi current peaks.
+
+No auto-reset (EN and IO0 aren't wired to the adapter), so enter download mode with the on-board buttons:
+1. Hold IO0, press and release EN, release IO0.
+2. `make flash`.
+3. Press EN to run the new firmware, then `make monitor`.
 
 ## Access point & web
 
@@ -20,17 +38,17 @@ On boot the board starts an access point, alongside the Wi-Fi client:
 | SSID | `router-watchdog-XXXX` (last 2 bytes of the AP MAC) |
 | Password | `watchdog` (WPA2) |
 | IP | `192.168.4.1/24`, DHCP for clients |
-| Channel | 1, then follows the client's channel once `wifi connect` succeeds (single radio) |
+| Channel | 1, then follows the client's channel once `wifi connect` succeeds (single radio, 2.4 GHz only) |
 
 Change them in `idf.py menuconfig` → Router watchdog.
 
 Web server (no auth, port 80, reachable on the AP and on the client network):
-- `http://192.168.4.1/` — status page (device, internet, Wi-Fi client, access point), refreshes every 5 s
+- `http://192.168.4.1/` — status page (device, Wi-Fi client, internet, access point, watchdog), refreshes every 5 s
 - `http://192.168.4.1/api/status` — same data as JSON
 
 ## Wi-Fi client
 
-A `wifi connect` that gets an IP saves SSID, password and band to NVS (namespace `wifi`, unencrypted); the board joins that network on every boot. `wifi disconnect` keeps it saved, `wifi forget` erases it. Reconnects back off after 3 quick retries: 5, 10, 20, 40, then every 60 s.
+A `wifi connect` that gets an IP saves SSID and password to NVS (namespace `wifi`, unencrypted); the board joins that network on every boot. `wifi disconnect` keeps it saved, `wifi forget` erases it. Reconnects back off after 3 quick retries: 5, 10, 20, 40, then every 60 s.
 
 ## Internet check
 
@@ -45,18 +63,50 @@ While the Wi-Fi client has an IP, a background task runs a round of probes right
 
 Online = any HTTP probe passes (redirects fail, so a captive portal can't fake it); pings are diagnostics for the offline reason (`gateway unreachable`, `public IPs unreachable`, `dns failing`, `http checks failing`). Probes run in parallel, so a round takes as long as its slowest probe (~20 s worst case, when DNS times out). A total outage (no public ping, no HTTP) turns offline after one round; a partial one (pings pass, HTTP fails) needs 2 failed rounds in a row. Failed rounds repeat every 10 s. Interval and threshold: `idf.py menuconfig` → Router watchdog internet check.
 
-## RGB LED
+## Power cycle watchdog
 
-The DevKitC-1 addressable LED (GPIO27, `idf.py menuconfig` → Router watchdog LED) shows network status by default:
+The core function: relay 1 cuts the router's power for 3 s (on, then back off) when either:
+
+| Trigger | After |
+|---|---|
+| internet check reports offline | 30 s continuously |
+| saved network has no IP (router hung or Wi-Fi gone) | 5 min continuously; not counted after `wifi disconnect` or with nothing saved |
+
+After a cycle no new one happens for 5 min so the router can boot. Each cycle that doesn't bring the internet back doubles that wait (5, 10, 20, 40, 60 min); it resets to 5 min once the internet is online. Relay, off time, triggers and waits: `idf.py menuconfig` → Router watchdog power cycle. `watchdog disable` is RAM-only; history resets on reboot.
+
+## Hardware
+
+ESP32-32E N4 relay board (ESP32-WROOM-32E, 4 MB flash).
+
+| Function | GPIO |
+|---|---|
+| status LED D20 | 23 |
+| UART0 TX / RX | 1 / 3 |
+| IO0 button (BOOT) | 0 |
+| EN button | chip reset |
+
+| Relay | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| GPIO | 32 | 33 | 25 | 26 | 27 | 14 | 12 | 13 |
+
+Relay 1 powers the router (see Power cycle watchdog).
+
+## Status LED
+
+LED D20 (GPIO23, PWM; pin and polarity in `idf.py menuconfig` → Router watchdog LED) shows network status by default:
 
 | State | LED |
 |---|---|
-| internet online | green, solid |
-| Wi-Fi connected, internet offline | red, solid |
-| connecting / waiting for IP / first internet check | orange, blinking |
-| no Wi-Fi (nothing saved or `wifi disconnect`) | orange, solid |
+| internet online | on |
+| Wi-Fi connected, internet offline | fast blink (250 ms) |
+| connecting / waiting for IP / first internet check | slow blink (1 s) |
+| no Wi-Fi (nothing saved or `wifi disconnect`) | breathing (3 s) |
 
-`led color|blink|breathe|rainbow|off` switch to manual mode; `led auto` returns to status mode. Settings are RAM-only.
+`led on|off|blink|breathe` switch to manual mode; `led auto` returns to status mode. Settings are RAM-only.
+
+## Relays
+
+8 relays, GPIOs per the Hardware table; change them in `idf.py menuconfig` → Router watchdog relays (`-1` = not connected), plus an active-low option for all. Connected relays start off at boot; state is RAM-only.
 
 ## Clock
 
@@ -88,22 +138,25 @@ Built on ESP-IDF `esp_console`: line editing, history, Tab completion, getopt-st
 | `free [-h]` | heap per memory region |
 | `ps` | FreeRTOS tasks: state, priority, core, stack high-water mark, CPU % since boot |
 | `wifi scan` | nearby networks: SSID, BSSID, channel, band, RSSI, auth |
-| `wifi connect [-t sec] [-b 2.4\|5\|auto] [-n] [<ssid> [<password>]]` | join a network (DHCP), saved once it gets an IP (`-n`: don't save); no ssid joins the saved one; auto-reconnects until `wifi disconnect` |
+| `wifi connect [-t sec] [-n] [<ssid> [<password>]]` | join a network (DHCP), saved once it gets an IP (`-n`: don't save); no ssid joins the saved one; auto-reconnects until `wifi disconnect` |
 | `wifi disconnect` | leave and stop reconnecting; saved network is kept |
 | `wifi status` | state, signal, IP, gateway, DNS, last error, saved network |
-| `wifi saved [-p]` | saved network: ssid, password (masked, `-p` shows it), band |
+| `wifi saved [-p]` | saved network: ssid, password (masked, `-p` shows it) |
 | `wifi forget` | erase the saved network; current connection stays up |
 | `ap status` | AP SSID, password, auth, channel, clients, IP, DHCP range, web URL |
 | `ap clients` | connected clients: MAC, IP, RSSI |
-| `led status` | mode, effect, color, period, brightness |
-| `led color <color>` | solid color; `<color>` = preset name, `#rrggbb` or `r,g,b` |
-| `led blink\|breathe <color> [-p ms]` | blink (default 500 ms) or fade (default 3000 ms) |
-| `led rainbow [-p ms]` | hue cycle, default 5000 ms |
-| `led off` / `led auto` | turn off / back to network status |
-| `led brightness <0-100>` | global brightness, default 20 |
-| `led presets` | list color names and effects |
+| `led status` | mode, effect, period, brightness |
+| `led on` / `led off` | turn on / off |
+| `led blink\|breathe [-p ms]` | blink (default 500 ms) or fade (default 3000 ms) |
+| `led auto` | back to network status |
+| `led brightness <0-100>` | PWM brightness, default 100 |
+| `relay status` | GPIO and on/off state of relays 1-8 |
+| `relay on\|off <1-8>` | switch a relay |
 | `inet status` | internet state, offline reason, last/next check, per-probe result and time |
 | `inet check [-t sec]` | run all probes now and wait for the result |
+| `watchdog status` | state, triggers, pending condition and progress, cycle count, last cycle and reason, next wait |
+| `watchdog cycle` | power cycle the router now (starts the post-cycle wait) |
+| `watchdog enable\|disable` | turn automatic power cycles on/off (manual `cycle` always works) |
 | `ping [-c n] [-i ms] [-s bytes] [-W ms] <host>` | ICMP echo; `-c 0` runs until Ctrl+C |
 | `nc [-uCv] [-w sec] <host> <port>` | TCP/UDP client; type lines, Ctrl+C/Ctrl+D quits |
 | `nc -l [-uCv] <port>` | accept one TCP connection, or receive UDP and reply to the last sender |
@@ -112,12 +165,16 @@ Built on ESP-IDF `esp_console`: line editing, history, Tab completion, getopt-st
 ## Layout
 
 ```
-main/main.c              NVS → led_init → net_init (joins saved network) → clock_init → inet_start → shell_init → register command groups → web_start → shell_start
+main/main.c              NVS → relay_init → led_init → net_init (joins saved network) → clock_init → inet_start → watchdog_start → shell_init → register command groups → web_start → shell_start
 components/clock/        timezone + SNTP (esp_netif_sntp), sync tracking
 components/cmd_clock/    date, tz, ntp
 main/status_led.c        network state → LED pattern (auto mode)
-components/led/          RGB LED driver (espressif/led_strip over RMT), effects, color presets
+components/led/          status LED driver (LEDC PWM), effects
 components/cmd_led/      led
+components/relay/        relay GPIOs (Kconfig), on/off state
+components/cmd_relay/    relay
+components/watchdog/     power cycle task: offline / no-IP triggers, relay pulse, post-cycle backoff
+components/cmd_watchdog/ watchdog
 components/net/          Wi-Fi core: client + access point, saved network (NVS), reconnect backoff, Kconfig defaults
 components/inet/         internet check task: ping + HTTP probes, online/offline state
 components/web/          HTTP server: / and /api/status

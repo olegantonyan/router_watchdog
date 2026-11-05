@@ -1,9 +1,15 @@
 menu "Router watchdog LED"
 
     config RW_LED_GPIO
-        int "RGB LED GPIO"
-        default 27
+        int "Status LED GPIO"
+        default 23
         help
-            Addressable (WS2812) RGB LED data pin. GPIO27 on ESP32-C5-DevKitC-1.
+            Single-color status LED, driven by LEDC PWM. GPIO23 (LED D20) on the ESP32-32E N4 relay board.
+
+    config RW_LED_ACTIVE_LOW
+        bool "LED is active low"
+        default n
+        help
+            Enable if the LED lights when the GPIO is low (cathode wired to the GPIO).
 
 endmenu
