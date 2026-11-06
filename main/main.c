@@ -7,6 +7,7 @@
 #include "relay.h"
 #include "watchdog.h"
 #include "net.h"
+#include "ota.h"
 #include "web.h"
 #include "telnet.h"
 #include "shell.h"
@@ -16,6 +17,7 @@
 #include "cmd_relay.h"
 #include "cmd_watchdog.h"
 #include "cmd_clock.h"
+#include "cmd_ota.h"
 #include "status_led.h"
 
 static const char *TAG = "main";
@@ -33,6 +35,9 @@ static void nvs_init(void)
 void app_main(void)
 {
     nvs_init();
+    if (ota_init() != ESP_OK) {
+        ESP_LOGE(TAG, "ota init failed, new firmware won't be marked valid");
+    }
     if (relay_init() != ESP_OK) {
         ESP_LOGE(TAG, "relays failed to start, continuing without them");
     }
@@ -58,6 +63,7 @@ void app_main(void)
     ESP_ERROR_CHECK(cmd_relay_register());
     ESP_ERROR_CHECK(cmd_watchdog_register());
     ESP_ERROR_CHECK(cmd_clock_register());
+    ESP_ERROR_CHECK(cmd_ota_register());
     if (web_start() != ESP_OK) {
         ESP_LOGE(TAG, "web server failed to start, continuing without it");
     }

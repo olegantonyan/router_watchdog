@@ -12,11 +12,15 @@
 #include "clock.h"
 #include "inet.h"
 #include "net.h"
+#include "ota.h"
+#include "relay.h"
 #include "shell.h"
 #include "watchdog.h"
 #include "web.h"
 
-#define PAGE_BUF_SIZE 3072
+#define PAGE_BUF_SIZE 4096
+#define UPLOAD_CHUNK 4096
+#define UPLOAD_TIMEOUTS 3
 
 static const char *TAG = "web";
 
@@ -42,6 +46,11 @@ typedef struct {
     uint32_t wd_cycles;
     int64_t wd_last_ago_s;
     char wd_last_reason[32];
+    const char *ota_partition;
+    const char *ota_state;
+    char ota_other[64];
+    int relay_gpio[RELAY_COUNT];
+    bool relay_on[RELAY_COUNT];
 } status_t;
 
 static void collect(status_t *s)
@@ -83,6 +92,17 @@ static void collect(status_t *s)
     esp_wifi_get_channel(&s->channel, &second);
     wifi_sta_list_t clients;
     s->ap_clients = esp_wifi_ap_get_sta_list(&clients) == ESP_OK ? clients.num : 0;
+
+    for (int i = 0; i < RELAY_COUNT; i++) {
+        s->relay_gpio[i] = relay_gpio(i + 1);
+        s->relay_on[i] = s->relay_gpio[i] >= 0 && relay_get(i + 1);
+    }
+
+    ota_status_t ota;
+    ota_status(&ota);
+    s->ota_partition = ota.running;
+    s->ota_state = ota_state_str(&ota);
+    snprintf(s->ota_other, sizeof(s->ota_other), "%s: %s", ota.other ? ota.other : "-", ota.other_version[0] ? ota.other_version : "empty");
 
     watchdog_status_t wd;
     watchdog_status(&wd);
@@ -148,15 +168,43 @@ static const char PAGE_FMT[] =
     "<tr><td>State<td>%s<tr><td>Internet<td>%s<tr><td>Network<td>%s<tr><td>IP<td>%s<tr><td>Signal<td>%s</table>"
     "<h2>Access point</h2><table>"
     "<tr><td>SSID<td>%s<tr><td>IP<td>%s<tr><td>Channel<td>%d<tr><td>Clients<td>%d</table>"
+    "<h2>Relays</h2><table>%s</table>"
     "<h2>Watchdog</h2><table>"
     "<tr><td>State<td>%s<tr><td>Power cycles<td>%" PRIu32 "<tr><td>Last cycle<td>%s</table>"
-    "<p><a href=/api/status>JSON</a></body></html>";
+    "<p><a href=/update>Firmware update</a> · <a href=/api/status>JSON</a></body></html>";
+
+static const char UPDATE_FMT[] =
+    "<!doctype html><html><head><meta charset=utf-8>"
+    "<meta name=viewport content=\"width=device-width,initial-scale=1\">"
+    "<meta name=color-scheme content=\"light dark\">"
+    "<title>%s update</title><style>"
+    "body{font-family:system-ui,sans-serif;max-width:32rem;margin:1rem auto;padding:0 1rem}"
+    "h1{font-size:1.3rem}"
+    "table{border-collapse:collapse;width:100%%}td{padding:.3rem 0;border-bottom:1px solid #8884}"
+    "td:first-child{opacity:.6;width:40%%}progress{width:100%%}"
+    "</style></head><body><h1>Firmware update</h1><table>"
+    "<tr><td>Version<td>%s<tr><td>Partition<td>%s<tr><td>State<td>%s<tr><td>Other slot<td>%s</table>"
+    "<p><input type=file id=f accept=.bin> <button id=b>Upload</button>"
+    "<p><progress id=p max=1 value=0 hidden></progress><p id=m>"
+    "<p><a href=/>Status</a>"
+    "<script>"
+    "const $=i=>document.getElementById(i),run='%s';"
+    "function wait(){setTimeout(()=>fetch('/api/status').then(r=>r.json()).then(s=>{"
+    "if(s.ota.partition==run)return wait();$('m').textContent='Running '+s.version+' on '+s.ota.partition}).catch(wait),3000)}"
+    "$('b').onclick=()=>{const f=$('f').files[0];if(!f){$('m').textContent='Choose a .bin file';return}"
+    "$('b').disabled=true;$('p').hidden=false;const x=new XMLHttpRequest();"
+    "x.upload.onprogress=e=>{$('p').value=e.loaded/e.total;$('m').textContent='Uploading '+Math.round(e.loaded*100/e.total)+'%%'};"
+    "x.onload=()=>{$('m').textContent=x.responseText;if(x.status==200){$('m').textContent+=' Waiting for the board...';wait()}else $('b').disabled=false};"
+    "x.onerror=()=>{$('m').textContent='Upload failed';$('b').disabled=false};"
+    "x.open('POST','/api/update');x.send(f)}"
+    "</script></body></html>";
 
 static const char JSON_FMT[] =
     "{\"version\":\"%s\",\"time\":%s,\"time_synced\":%s,\"uptime_s\":%" PRId64 ",\"free_heap\":%" PRIu32 ","
     "\"internet\":\"%s\",\"sta\":{\"state\":\"%s\",\"ssid\":\"%s\",\"ip\":\"%s\",\"rssi\":%s},"
     "\"ap\":{\"ssid\":\"%s\",\"ip\":\"%s\",\"channel\":%d,\"clients\":%d},"
-    "\"watchdog\":{\"running\":%s,\"enabled\":%s,\"state\":\"%s\",\"cycles\":%" PRIu32 ",\"last_cycle_ago_s\":%s,\"last_reason\":\"%s\"}}\n";
+    "\"watchdog\":{\"running\":%s,\"enabled\":%s,\"state\":\"%s\",\"cycles\":%" PRIu32 ",\"last_cycle_ago_s\":%s,\"last_reason\":\"%s\"},"
+    "\"ota\":{\"partition\":\"%s\",\"state\":\"%s\"},\"relays\":[%s]}\n";
 
 static esp_err_t send_formatted(httpd_req_t *req, const char *type, int (*render)(char *, size_t, const status_t *))
 {
@@ -195,12 +243,23 @@ static int render_html(char *buf, size_t len, const status_t *s)
         char d[16];
         snprintf(last, sizeof(last), "%s ago (%s)", shell_fmt_duration(d, sizeof(d), s->wd_last_ago_s * 1000000LL), s->wd_last_reason);
     }
+    char relays[RELAY_COUNT * 64];
+    size_t o = 0;
+    for (int i = 0; i < RELAY_COUNT; i++) {
+        int g = s->relay_gpio[i];
+        char pin[24] = "";
+        if (g >= 0) {
+            snprintf(pin, sizeof(pin), " (GPIO%d)", g);
+        }
+        o += snprintf(relays + o, sizeof(relays) - o, "<tr><td>%d%s%s<td>%s", i + 1, pin, i + 1 == CONFIG_RW_WD_RELAY ? ", router" : "",
+                      g < 0 ? "not connected" : s->relay_on[i] ? "on" : "off");
+    }
     int64_t t = s->uptime_s;
     return snprintf(buf, len, PAGE_FMT, ap_ssid, ap_ssid,
                     s->version, time, t / 86400, t / 3600 % 24, t / 60 % 60, t % 60, s->free_heap,
                     s->sta_state, s->internet, sta_ssid[0] ? sta_ssid : "-", s->sta_ip[0] ? s->sta_ip : "-", rssi,
                     ap_ssid, s->ap_ip, s->channel, s->ap_clients,
-                    s->wd_state, s->wd_cycles, last);
+                    relays, s->wd_state, s->wd_cycles, last);
 }
 
 static int render_json(char *buf, size_t len, const status_t *s)
@@ -223,10 +282,27 @@ static int render_json(char *buf, size_t len, const status_t *s)
     if (s->wd_last_ago_s >= 0) {
         snprintf(last_ago, sizeof(last_ago), "%" PRId64, s->wd_last_ago_s);
     }
+    char relays[RELAY_COUNT * 40];
+    size_t o = 0;
+    for (int i = 0; i < RELAY_COUNT; i++) {
+        char gpio[12] = "null";
+        if (s->relay_gpio[i] >= 0) {
+            snprintf(gpio, sizeof(gpio), "%d", s->relay_gpio[i]);
+        }
+        o += snprintf(relays + o, sizeof(relays) - o, "%s{\"relay\":%d,\"gpio\":%s,\"on\":%s}", i ? "," : "", i + 1, gpio, s->relay_on[i] ? "true" : "false");
+    }
     return snprintf(buf, len, JSON_FMT, s->version, time, s->time_synced ? "true" : "false", s->uptime_s, s->free_heap,
                     s->internet, s->sta_state, sta_ssid, s->sta_ip, rssi,
                     ap_ssid, s->ap_ip, s->channel, s->ap_clients,
-                    s->wd_running ? "true" : "false", s->wd_enabled ? "true" : "false", s->wd_state, s->wd_cycles, last_ago, s->wd_last_reason);
+                    s->wd_running ? "true" : "false", s->wd_enabled ? "true" : "false", s->wd_state, s->wd_cycles, last_ago, s->wd_last_reason,
+                    s->ota_partition, s->ota_state, relays);
+}
+
+static int render_update(char *buf, size_t len, const status_t *s)
+{
+    char ap_ssid[200];
+    escape(ap_ssid, sizeof(ap_ssid), s->ap_ssid, false);
+    return snprintf(buf, len, UPDATE_FMT, ap_ssid, s->version, s->ota_partition, s->ota_state, s->ota_other, s->ota_partition);
 }
 
 static esp_err_t handle_index(httpd_req_t *req)
@@ -239,16 +315,82 @@ static esp_err_t handle_status(httpd_req_t *req)
     return send_formatted(req, "application/json", render_json);
 }
 
+static esp_err_t handle_update_page(httpd_req_t *req)
+{
+    return send_formatted(req, "text/html; charset=utf-8", render_update);
+}
+
+static esp_err_t upload_error(httpd_req_t *req, const char *status, const char *msg)
+{
+    httpd_resp_set_status(req, status);
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_set_hdr(req, "Connection", "close");
+    httpd_resp_sendstr(req, msg);
+    return ESP_FAIL;
+}
+
+static esp_err_t handle_update(httpd_req_t *req)
+{
+    if (req->content_len == 0) {
+        return upload_error(req, "400 Bad Request", "empty body, POST the .bin file");
+    }
+    const char *err = ota_begin(req->content_len);
+    if (err) {
+        return upload_error(req, "409 Conflict", err);
+    }
+    char *buf = malloc(UPLOAD_CHUNK);
+    if (!buf) {
+        ota_finish(false);
+        return upload_error(req, "500 Internal Server Error", "out of memory");
+    }
+    size_t left = req->content_len;
+    int timeouts = 0;
+    while (left) {
+        int n = httpd_req_recv(req, buf, left < UPLOAD_CHUNK ? left : UPLOAD_CHUNK);
+        if (n == HTTPD_SOCK_ERR_TIMEOUT && ++timeouts < UPLOAD_TIMEOUTS) {
+            continue;
+        }
+        if (n <= 0) {
+            free(buf);
+            ota_finish(false);
+            ESP_LOGW(TAG, "upload interrupted, %zu bytes missing", left);
+            return ESP_FAIL;
+        }
+        timeouts = 0;
+        left -= n;
+        if (!err) {
+            err = ota_write(buf, n);
+        }
+    }
+    free(buf);
+    const char *fin = ota_finish(!err);
+    if (err || fin) {
+        return upload_error(req, "400 Bad Request", err ? err : fin);
+    }
+
+    ota_status_t st;
+    ota_status(&st);
+    char msg[96];
+    snprintf(msg, sizeof(msg), "Installed %s on %s, rebooting.", st.other_version, st.other);
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_sendstr(req, msg);
+    ota_reboot(1000);
+    return ESP_OK;
+}
+
 esp_err_t web_start(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.lru_purge_enable = true;
+    cfg.stack_size = 6144;
     httpd_handle_t server;
     ESP_RETURN_ON_ERROR(httpd_start(&server, &cfg), TAG, "httpd start");
 
     const httpd_uri_t uris[] = {
         { .uri = "/", .method = HTTP_GET, .handler = handle_index },
         { .uri = "/api/status", .method = HTTP_GET, .handler = handle_status },
+        { .uri = "/update", .method = HTTP_GET, .handler = handle_update_page },
+        { .uri = "/api/update", .method = HTTP_POST, .handler = handle_update },
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
         ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server, &uris[i]), TAG, "register %s", uris[i].uri);

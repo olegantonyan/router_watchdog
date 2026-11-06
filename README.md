@@ -7,6 +7,7 @@ ESP32 firmware (ESP-IDF 6.1) for the ESP32-32E N4 relay board, with an interacti
 ```sh
 make build
 make flash-monitor              # TTY_PORT=/dev/ttyACM0 by default
+make ota HOST=192.168.4.1        # over Wi-Fi, see Firmware update
 ```
 
 Settings live in `sdkconfig.defaults`; `sdkconfig` is generated from it (`rm sdkconfig && idf.py set-target esp32` to regenerate).
@@ -43,8 +44,21 @@ On boot the board starts an access point, alongside the Wi-Fi client:
 Change them in `idf.py menuconfig` → Router watchdog.
 
 Web server (no auth, port 80, reachable on the AP and on the client network):
-- `http://192.168.4.1/` — status page (device, Wi-Fi client, internet, access point, watchdog), refreshes every 5 s
+- `http://192.168.4.1/` — status page (device, Wi-Fi client, internet, access point, relays, watchdog), refreshes every 5 s
 - `http://192.168.4.1/api/status` — same data as JSON
+- `http://192.168.4.1/update` — firmware upload (see Firmware update)
+
+## Firmware update (OTA)
+
+Two 1.7 MB app slots (`ota_0`, `ota_1`); an update writes the inactive one and reboots into it. Boards still on the single-app partition table need one serial `make flash` first (new partition table and bootloader; the saved Wi-Fi network is kept).
+
+| Way | How |
+|---|---|
+| browser | `http://192.168.4.1/update`, choose `build/router_watchdog.bin`, Upload |
+| curl | `make ota HOST=192.168.4.1` (POSTs the .bin to `/api/update`) |
+| shell | `ota update http://<pc-ip>:8000/router_watchdog.bin` after `python3 -m http.server -d build 8000` on the PC; https works too |
+
+Images for another project or chip are rejected before anything is written. New firmware is marked valid after running 60 s; a crash or reset before that boots the previous firmware again. `ota rollback` switches back manually. No auth: anyone on the AP or client network can flash firmware.
 
 ## Wi-Fi client
 
@@ -76,7 +90,7 @@ After a cycle no new one happens for 5 min so the router can boot. Each cycle th
 
 ## Hardware
 
-ESP32-32E N4 relay board (ESP32-WROOM-32E, 4 MB flash).
+ESP32-32E N4 relay board (ESP32-WROOM-32E, 4 MB flash: NVS, two 1.7 MB OTA app slots).
 
 | Function | GPIO |
 |---|---|
@@ -165,6 +179,9 @@ Password `watchdog`, one session at a time (a second client gets `busy`), 3 wron
 | `watchdog status` | state, triggers, pending condition and progress, cycle count, last cycle and reason, next wait |
 | `watchdog cycle` | power cycle the router now (starts the post-cycle wait) |
 | `watchdog enable\|disable` | turn automatic power cycles on/off (manual `cycle` always works) |
+| `ota status` | running firmware and slot, valid / pending verify, other slot's version, update progress |
+| `ota update [-n] <url>` | download an http(s) .bin, install, reboot (`-n`: don't); Ctrl+C aborts |
+| `ota rollback` | reboot into the previous firmware |
 | `ping [-c n] [-i ms] [-s bytes] [-W ms] <host>` | ICMP echo; `-c 0` runs until Ctrl+C |
 | `nc [-uCv] [-w sec] <host> <port>` | TCP/UDP client; type lines, Ctrl+C/Ctrl+D quits |
 | `nc -l [-uCv] <port>` | accept one TCP connection, or receive UDP and reply to the last sender |
@@ -173,7 +190,7 @@ Password `watchdog`, one session at a time (a second client gets `busy`), 3 wron
 ## Layout
 
 ```
-main/main.c              NVS → relay_init → led_init → net_init (joins saved network) → clock_init → inet_start → watchdog_start → shell_init → register command groups → web_start → telnet_start → shell_start
+main/main.c              NVS → ota_init → relay_init → led_init → net_init (joins saved network) → clock_init → inet_start → watchdog_start → shell_init → register command groups → web_start → telnet_start → shell_start
 components/clock/        timezone + SNTP (esp_netif_sntp), sync tracking
 components/cmd_clock/    date, tz, ntp
 main/status_led.c        network state → LED pattern (auto mode)
@@ -185,7 +202,9 @@ components/watchdog/     power cycle task: offline / no-IP triggers, relay pulse
 components/cmd_watchdog/ watchdog
 components/net/          Wi-Fi core: client + access point, saved network (NVS), reconnect backoff, Kconfig defaults
 components/inet/         internet check task: ping + HTTP probes, online/offline state
-components/web/          HTTP server: / and /api/status
+components/ota/          OTA core: image checks, slot writes, 60 s mark-valid timer, rollback
+components/cmd_ota/      ota
+components/web/          HTTP server: /, /api/status, /update, /api/update
 components/shell/        UART REPL (linenoise), shell_exec (one command at a time) + helpers: shell_args_ok, shell_subcmd_run, shell_getc
 components/telnet/       telnet server: login, line editor, session stdin/stdout redirected to the socket
 components/cmd_system/   sysinfo, version, uptime, reboot, free, ps
