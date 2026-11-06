@@ -46,6 +46,7 @@ Change them in `idf.py menuconfig` → Router watchdog.
 Web server (no auth, port 80, reachable on the AP and on the client network):
 - `http://192.168.4.1/` — status page (device, Wi-Fi client, internet, access point, relays, watchdog), refreshes every 5 s
 - `http://192.168.4.1/api/status` — same data as JSON
+- `http://192.168.4.1/shell` — shell in the browser (see Telnet)
 - `http://192.168.4.1/update` — firmware upload (see Firmware update)
 
 ## Firmware update (OTA)
@@ -145,6 +146,8 @@ telnet 192.168.4.1              # or the board's IP on the client network
 
 Password `watchdog`, one session at a time (a second client gets `busy`), 3 wrong passwords disconnect, closes after 10 min idle. Keys: ←/→, Home/End, Backspace/Delete, ↑/↓ history (16, per session), Tab completes command names, Ctrl+A/E/U/K/W/L, Ctrl+C drops the line, `exit` or Ctrl+D on an empty line quits. Logs stay on UART except those from commands run in the telnet session. Traffic, password included, is plaintext: use it on trusted networks only. Port, password (empty = none), idle timeout or disabling it: `idf.py menuconfig` → Router watchdog telnet.
 
+`http://192.168.4.1/shell` is the same session in the browser: a built-in terminal (no external scripts, works on the AP without internet) whose WebSocket `/api/shell` is bridged to the telnet server over loopback. Same password, keys, idle timeout and one-session limit as telnet; also plaintext. Ctrl+C interrupts unless text is selected (then it copies); Ctrl+V pastes.
+
 | Command | Description |
 |---|---|
 | `sysinfo` | chip, revision, cores, features, flash, MAC addresses |
@@ -204,7 +207,7 @@ components/net/          Wi-Fi core: client + access point, saved network (NVS),
 components/inet/         internet check task: ping + HTTP probes, online/offline state
 components/ota/          OTA core: image checks, slot writes, 60 s mark-valid timer, rollback
 components/cmd_ota/      ota
-components/web/          HTTP server: /, /api/status, /update, /api/update
+components/web/          HTTP server: /, /api/status, /update, /api/update, /shell + /api/shell (WebSocket → telnet bridge)
 components/shell/        UART REPL (linenoise), shell_exec (one command at a time) + helpers: shell_args_ok, shell_subcmd_run, shell_getc
 components/telnet/       telnet server: login, line editor, session stdin/stdout redirected to the socket
 components/cmd_system/   sysinfo, version, uptime, reboot, free, ps

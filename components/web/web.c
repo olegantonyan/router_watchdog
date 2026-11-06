@@ -17,6 +17,7 @@
 #include "shell.h"
 #include "watchdog.h"
 #include "web.h"
+#include "web_shell.h"
 
 #define PAGE_BUF_SIZE 4096
 #define UPLOAD_CHUNK 4096
@@ -171,7 +172,7 @@ static const char PAGE_FMT[] =
     "<h2>Relays</h2><table>%s</table>"
     "<h2>Watchdog</h2><table>"
     "<tr><td>State<td>%s<tr><td>Power cycles<td>%" PRIu32 "<tr><td>Last cycle<td>%s</table>"
-    "<p><a href=/update>Firmware update</a> · <a href=/api/status>JSON</a></body></html>";
+    "<p><a href=/shell>Shell</a> · <a href=/update>Firmware update</a> · <a href=/api/status>JSON</a></body></html>";
 
 static const char UPDATE_FMT[] =
     "<!doctype html><html><head><meta charset=utf-8>"
@@ -395,6 +396,7 @@ esp_err_t web_start(void)
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
         ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server, &uris[i]), TAG, "register %s", uris[i].uri);
     }
+    ESP_RETURN_ON_ERROR(web_shell_register(server), TAG, "shell");
     esp_log_level_set("httpd_txrx", ESP_LOG_ERROR);
     ESP_LOGI(TAG, "listening on port %d", cfg.server_port);
     return ESP_OK;
