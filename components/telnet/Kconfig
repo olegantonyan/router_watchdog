@@ -1,0 +1,24 @@
+menu "Router watchdog telnet"
+
+    config RW_TELNET_ENABLE
+        bool "Shell over telnet"
+        default y
+
+    config RW_TELNET_PORT
+        int "Port"
+        range 1 65535
+        default 23
+        depends on RW_TELNET_ENABLE
+
+    config RW_TELNET_PASSWORD
+        string "Password, empty for none"
+        default "watchdog"
+        depends on RW_TELNET_ENABLE
+
+    config RW_TELNET_IDLE_S
+        int "Idle timeout (s), 0 to disable"
+        range 0 86400
+        default 600
+        depends on RW_TELNET_ENABLE
+
+endmenu

@@ -1,6 +1,6 @@
 # router_watchdog
 
-ESP32 firmware (ESP-IDF 6.1) for the ESP32-32E N4 relay board, with an interactive shell on UART0 (115200 8N1).
+ESP32 firmware (ESP-IDF 6.1) for the ESP32-32E N4 relay board, with an interactive shell on UART0 (115200 8N1) and over telnet.
 
 ## Build & run
 
@@ -121,7 +121,15 @@ System time is kept in software by ESP-IDF (RTC timer), survives every reset exc
 
 ## Shell
 
-Built on ESP-IDF `esp_console`: line editing, history, Tab completion, getopt-style args via argtable3, `help [cmd]`. Long-running commands stop on Ctrl+C.
+Built on ESP-IDF `esp_console`: line editing, history, Tab completion, getopt-style args via argtable3, `help [cmd]`. Long-running commands stop on Ctrl+C. Commands run one at a time: while one runs on UART or telnet, the other session waits.
+
+### Telnet
+
+```sh
+telnet 192.168.4.1              # or the board's IP on the client network
+```
+
+Password `watchdog`, one session at a time (a second client gets `busy`), 3 wrong passwords disconnect, closes after 10 min idle. Keys: ←/→, Home/End, Backspace/Delete, ↑/↓ history (16, per session), Tab completes command names, Ctrl+A/E/U/K/W/L, Ctrl+C drops the line, `exit` or Ctrl+D on an empty line quits. Logs stay on UART except those from commands run in the telnet session. Traffic, password included, is plaintext: use it on trusted networks only. Port, password (empty = none), idle timeout or disabling it: `idf.py menuconfig` → Router watchdog telnet.
 
 | Command | Description |
 |---|---|
@@ -165,7 +173,7 @@ Built on ESP-IDF `esp_console`: line editing, history, Tab completion, getopt-st
 ## Layout
 
 ```
-main/main.c              NVS → relay_init → led_init → net_init (joins saved network) → clock_init → inet_start → watchdog_start → shell_init → register command groups → web_start → shell_start
+main/main.c              NVS → relay_init → led_init → net_init (joins saved network) → clock_init → inet_start → watchdog_start → shell_init → register command groups → web_start → telnet_start → shell_start
 components/clock/        timezone + SNTP (esp_netif_sntp), sync tracking
 components/cmd_clock/    date, tz, ntp
 main/status_led.c        network state → LED pattern (auto mode)
@@ -178,7 +186,8 @@ components/cmd_watchdog/ watchdog
 components/net/          Wi-Fi core: client + access point, saved network (NVS), reconnect backoff, Kconfig defaults
 components/inet/         internet check task: ping + HTTP probes, online/offline state
 components/web/          HTTP server: / and /api/status
-components/shell/        REPL setup + helpers: shell_args_ok, shell_subcmd_run, shell_getc
+components/shell/        UART REPL (linenoise), shell_exec (one command at a time) + helpers: shell_args_ok, shell_subcmd_run, shell_getc
+components/telnet/       telnet server: login, line editor, session stdin/stdout redirected to the socket
 components/cmd_system/   sysinfo, version, uptime, reboot, free, ps
 components/cmd_net/      wifi, ap, inet, ping, nc
 ```
@@ -190,3 +199,4 @@ Create `components/cmd_<feature>/` exposing `esp_err_t cmd_<feature>_register(vo
 - Flags: an argtable struct + `shell_args_ok()` (see `reboot` in `cmd_sys.c`).
 - Subcommands (`foo bar ...`): a `shell_subcmd_t` table + `shell_subcmd_run()` (see `cmd_wifi.c`).
 - Long-running loops: poll `shell_getc()` and stop on `SHELL_CTRL_C`.
+- Printing from another task (callbacks): use the `stdout` captured in the command handler (see `cmd_ping.c`), otherwise telnet output lands on UART.

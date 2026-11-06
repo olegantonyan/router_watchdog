@@ -26,6 +26,7 @@ static struct {
 
 typedef struct {
     TaskHandle_t waiter;
+    FILE *out;
     uint32_t min_ms;
     uint32_t max_ms;
     uint32_t sum_ms;
@@ -52,7 +53,7 @@ static void on_success(esp_ping_handle_t hdl, void *arg)
         st->max_ms = elapsed;
     }
     st->sum_ms += elapsed;
-    printf("%" PRIu32 " bytes from %s: icmp_seq=%u ttl=%u time=%" PRIu32 " ms\n",
+    fprintf(st->out, "%" PRIu32 " bytes from %s: icmp_seq=%u ttl=%u time=%" PRIu32 " ms\n",
            size, ipaddr_ntoa(&addr), seq, ttl, elapsed);
 }
 
@@ -62,7 +63,7 @@ static void on_timeout(esp_ping_handle_t hdl, void *arg)
     ip_addr_t addr;
     esp_ping_get_profile(hdl, ESP_PING_PROF_SEQNO, &seq, sizeof(seq));
     esp_ping_get_profile(hdl, ESP_PING_PROF_IPADDR, &addr, sizeof(addr));
-    printf("from %s: icmp_seq=%u timeout\n", ipaddr_ntoa(&addr), seq);
+    fprintf(((ping_stats_t *)arg)->out, "from %s: icmp_seq=%u timeout\n", ipaddr_ntoa(&addr), seq);
 }
 
 static void on_end(esp_ping_handle_t hdl, void *arg)
@@ -118,7 +119,7 @@ static int cmd_ping(int argc, char **argv)
         return 1;
     }
 
-    ping_stats_t stats = { .waiter = xTaskGetCurrentTaskHandle() };
+    ping_stats_t stats = { .waiter = xTaskGetCurrentTaskHandle(), .out = stdout };
     esp_ping_callbacks_t cbs = {
         .cb_args = &stats,
         .on_ping_success = on_success,

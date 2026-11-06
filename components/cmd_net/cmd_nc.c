@@ -61,7 +61,7 @@ static input_t read_input(int *c)
 {
     unsigned char ch;
     if (read(fileno(stdin), &ch, 1) != 1) {
-        return INPUT_NONE;
+        return INPUT_ABORT;
     }
     *c = ch;
     return ch == SHELL_CTRL_C ? INPUT_ABORT : INPUT_CHAR;

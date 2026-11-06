@@ -8,6 +8,7 @@
 #include "watchdog.h"
 #include "net.h"
 #include "web.h"
+#include "telnet.h"
 #include "shell.h"
 #include "cmd_system.h"
 #include "cmd_net.h"
@@ -59,6 +60,9 @@ void app_main(void)
     ESP_ERROR_CHECK(cmd_clock_register());
     if (web_start() != ESP_OK) {
         ESP_LOGE(TAG, "web server failed to start, continuing without it");
+    }
+    if (telnet_start() != ESP_OK) {
+        ESP_LOGE(TAG, "telnet failed to start, shell only on UART");
     }
     ESP_ERROR_CHECK(shell_start());
 }
