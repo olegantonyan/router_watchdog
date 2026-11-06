@@ -35,8 +35,8 @@ static int cmd_status(int argc, char **argv)
     if (st.cycling) {
         printf("power cycling now\n");
     } else if (st.holdoff_until_us > now) {
-        printf("%s, waiting %s after last cycle\n", st.enabled ? "enabled" : "disabled",
-               shell_fmt_duration(d, sizeof(d), st.holdoff_until_us - now));
+        printf("%s, waiting %s after %s\n", st.enabled ? "enabled" : "disabled",
+               shell_fmt_duration(d, sizeof(d), st.holdoff_until_us - now), st.cycles ? "last cycle" : "boot");
     } else {
         printf("%s\n", st.enabled ? "enabled" : "disabled");
     }

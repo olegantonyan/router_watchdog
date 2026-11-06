@@ -121,7 +121,7 @@ static void collect(status_t *s)
     } else if (!wd.enabled) {
         strcpy(s->wd_state, "disabled");
     } else if (wd.holdoff_until_us > now) {
-        snprintf(s->wd_state, sizeof(s->wd_state), "waiting %s after last cycle", shell_fmt_duration(d, sizeof(d), wd.holdoff_until_us - now));
+        snprintf(s->wd_state, sizeof(s->wd_state), "waiting %s after %s", shell_fmt_duration(d, sizeof(d), wd.holdoff_until_us - now), wd.cycles ? "last cycle" : "boot");
     } else if (wd.pending) {
         snprintf(s->wd_state, sizeof(s->wd_state), "%s for %s of %s", wd.pending, shell_fmt_duration(d, sizeof(d), wd.pending_for_us), shell_fmt_duration(d2, sizeof(d2), wd.pending_limit_s * 1000000LL));
     } else {

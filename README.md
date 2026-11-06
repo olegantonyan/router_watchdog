@@ -87,7 +87,7 @@ The core function: relay 1 cuts the router's power for 3 s (on, then back off) w
 | internet check reports offline | 30 s continuously |
 | saved network has no IP (router hung or Wi-Fi gone) | 5 min continuously; not counted after `wifi disconnect` or with nothing saved |
 
-After a cycle no new one happens for 5 min so the router can boot. Each cycle that doesn't bring the internet back doubles that wait (5, 10, 20, 40, 60 min); it resets to 5 min once the internet is online. Relay, off time, triggers and waits: `idf.py menuconfig` → Router watchdog power cycle. `watchdog disable` is RAM-only; history resets on reboot.
+After boot and after each cycle no new one happens for 5 min, so the router (powered up together with the board, or just cycled) can boot. Each cycle that doesn't bring the internet back doubles that wait (5, 10, 20, 40, 60 min); it resets to 5 min once the internet is online. Relay, off time, triggers and waits: `idf.py menuconfig` → Router watchdog power cycle. `watchdog disable` is RAM-only; history resets on reboot.
 
 ## Hardware
 

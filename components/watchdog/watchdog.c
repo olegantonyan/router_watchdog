@@ -95,6 +95,7 @@ esp_err_t watchdog_start(void)
         .enabled = true,
         .relay = CONFIG_RW_WD_RELAY,
         .next_holdoff_s = CONFIG_RW_WD_GRACE_S,
+        .holdoff_until_us = esp_timer_get_time() + CONFIG_RW_WD_GRACE_S * US_PER_S,
     };
     ESP_RETURN_ON_FALSE(xTaskCreate(watchdog_task, "watchdog", 3072, NULL, 2, &s_task) == pdPASS, ESP_ERR_NO_MEM, TAG, "task");
     return ESP_OK;
