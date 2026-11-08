@@ -1,5 +1,9 @@
 menu "Router watchdog"
 
+    config RW_HOSTNAME
+        string "Hostname (DHCP and mDNS, <name>.local)"
+        default "router-watchdog"
+
     config RW_AP_SSID
         string "Access point SSID"
         default "router-watchdog"

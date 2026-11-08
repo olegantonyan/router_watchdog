@@ -9,6 +9,7 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "mdns.h"
 #include "nvs.h"
 #include "sdkconfig.h"
 #include "soc/soc_caps.h"
@@ -111,6 +112,8 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         const wifi_event_ap_stadisconnected_t *e = data;
         ESP_LOGI(TAG, "ap client " MACSTR " left", MAC2STR(e->mac));
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+        const ip_event_got_ip_t *e = data;
+        ESP_LOGI(TAG, "got ip " IPSTR ", http://%s.local/", IP2STR(&e->ip_info.ip), CONFIG_RW_HOSTNAME);
         s_retries = 0;
         xEventGroupSetBits(s_events, NET_GOT_IP);
         if (s_save_pending) {
@@ -140,6 +143,13 @@ static esp_err_t ap_configure(void)
     return esp_wifi_set_config(WIFI_IF_AP, &cfg);
 }
 
+static esp_err_t mdns_start(void)
+{
+    ESP_RETURN_ON_ERROR(mdns_init(), TAG, "mdns init");
+    ESP_RETURN_ON_ERROR(mdns_hostname_set(CONFIG_RW_HOSTNAME), TAG, "mdns hostname");
+    return mdns_instance_name_set(s_ap_ssid);
+}
+
 static void on_shutdown(void)
 {
     s_reconnect = false;
@@ -157,6 +167,7 @@ esp_err_t net_init(void)
 
     s_sta = esp_netif_create_default_wifi_sta();
     ESP_RETURN_ON_FALSE(s_sta, ESP_FAIL, TAG, "sta netif");
+    ESP_RETURN_ON_ERROR(esp_netif_set_hostname(s_sta, CONFIG_RW_HOSTNAME), TAG, "hostname");
     s_ap = esp_netif_create_default_wifi_ap();
     ESP_RETURN_ON_FALSE(s_ap, ESP_FAIL, TAG, "ap netif");
 
@@ -168,6 +179,7 @@ esp_err_t net_init(void)
     ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_APSTA), TAG, "wifi mode");
     ESP_RETURN_ON_ERROR(ap_configure(), TAG, "ap config");
     ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "wifi start");
+    ESP_RETURN_ON_ERROR(mdns_start(), TAG, "mdns");
 
     esp_log_level_set("wifi", ESP_LOG_ERROR);
     ESP_RETURN_ON_ERROR(esp_register_shutdown_handler(on_shutdown), TAG, "shutdown handler");
@@ -176,7 +188,7 @@ esp_err_t net_init(void)
 
     esp_netif_ip_info_t ip;
     esp_netif_get_ip_info(s_ap, &ip);
-    ESP_LOGI(TAG, "ap \"%s\" up, http://" IPSTR "/", s_ap_ssid, IP2STR(&ip.ip));
+    ESP_LOGI(TAG, "ap \"%s\" up, http://" IPSTR "/ or http://%s.local/", s_ap_ssid, IP2STR(&ip.ip), CONFIG_RW_HOSTNAME);
 
     net_saved_t saved;
     if (net_saved(&saved) == ESP_OK) {

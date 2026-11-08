@@ -43,6 +43,8 @@ On boot the board starts an access point, alongside the Wi-Fi client:
 
 Change them in `idf.py menuconfig` → Router watchdog.
 
+The board answers as `router-watchdog.local` over mDNS on both the AP and the client network (also sent as its DHCP hostname), so `http://router-watchdog.local/`, `telnet router-watchdog.local` and `make ota HOST=router-watchdog.local` work without knowing the IP. Linux needs `nss-mdns` and mDNS allowed in the firewall (`firewall-cmd --permanent --zone=public --add-service=mdns`, then `--reload`); otherwise use the IP. Hostname: menuconfig → Router watchdog.
+
 Web server (no auth, port 80, reachable on the AP and on the client network):
 - `http://192.168.4.1/` — status page (device, Wi-Fi client, internet, access point, relays, watchdog), refreshes every 5 s
 - `http://192.168.4.1/api/status` — same data as JSON
@@ -203,7 +205,7 @@ components/relay/        relay GPIOs (Kconfig), on/off state
 components/cmd_relay/    relay
 components/watchdog/     power cycle task: offline / no-IP triggers, relay pulse, post-cycle backoff
 components/cmd_watchdog/ watchdog
-components/net/          Wi-Fi core: client + access point, saved network (NVS), reconnect backoff, Kconfig defaults
+components/net/          Wi-Fi core: client + access point, saved network (NVS), reconnect backoff, DHCP hostname + mDNS, Kconfig defaults
 components/inet/         internet check task: ping + HTTP probes, online/offline state
 components/ota/          OTA core: image checks, slot writes, 60 s mark-valid timer, rollback
 components/cmd_ota/      ota
